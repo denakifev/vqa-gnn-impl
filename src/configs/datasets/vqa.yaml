@@ -1,0 +1,47 @@
+# VQA v2 dataset configuration for VQA-GNN training.
+#
+# Requires pre-prepared data. See README.md → "Data preparation".
+# Data directory layout:
+#   ${data_dir}/questions/train_questions.json
+#   ${data_dir}/questions/val_questions.json
+#   ${data_dir}/annotations/train_annotations.json
+#   ${data_dir}/annotations/val_annotations.json
+#   ${data_dir}/visual_features/train_features.h5
+#   ${data_dir}/visual_features/val_features.h5
+#   ${data_dir}/knowledge_graphs/train_graphs.h5
+#   ${data_dir}/knowledge_graphs/val_graphs.h5
+#   ${data_dir}/answer_vocab.json
+#
+# Kaggle example:
+#   data_dir: /kaggle/input/vqa-gnn-data
+#   answer_vocab_path: /kaggle/input/vqa-gnn-data/answer_vocab.json
+
+train:
+  _target_: src.datasets.VQADataset
+  partition: "train"
+  data_dir: "data/vqa"                     # override for Kaggle: /kaggle/input/...
+  answer_vocab_path: "data/vqa/answer_vocab.json"
+  max_question_len: 20
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  # d_kg must match: src/configs/model/vqa_gnn.yaml (d_kg)
+  #                  AND --d-kg used in scripts/prepare_kg_graphs.py
+  # Default 100 is for demo. Use 300 for full ConceptNet Numberbatch.
+  d_kg: 100
+  text_encoder_name: "roberta-large"
+  instance_transforms: ${transforms.instance_transforms.train}
+  shuffle_index: True
+
+val:
+  _target_: src.datasets.VQADataset
+  partition: "val"
+  data_dir: "data/vqa"
+  answer_vocab_path: "data/vqa/answer_vocab.json"
+  max_question_len: 20
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  d_kg: 100  # must match model config and prepare_kg_graphs.py --d-kg
+  text_encoder_name: "roberta-large"
+  instance_transforms: ${transforms.instance_transforms.inference}

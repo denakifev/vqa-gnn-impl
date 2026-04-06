@@ -1,0 +1,13 @@
+# DEMO dataset config for VQA-GNN inference smoke testing.
+# Generates synthetic data — for pipeline validation only.
+
+val:
+  _target_: src.datasets.VQADemoDataset
+  num_samples: 50
+  num_answers: 3129
+  max_question_len: 20
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  d_kg: 100
+  seed: 99

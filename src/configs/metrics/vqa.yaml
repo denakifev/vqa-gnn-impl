@@ -1,0 +1,15 @@
+# Metrics for VQA-GNN training and evaluation.
+#
+# VQAAccuracy implements the official VQA v2 evaluation metric:
+#   acc(q) = min(#humans_said_predicted_answer / 3, 1.0)
+# averaged over all questions in the batch.
+
+device: "auto"
+
+train:
+  - _target_: src.metrics.VQAAccuracy
+    name: "VQA_Accuracy"
+
+inference:
+  - _target_: src.metrics.VQAAccuracy
+    name: "VQA_Accuracy"

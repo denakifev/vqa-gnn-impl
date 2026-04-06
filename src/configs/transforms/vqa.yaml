@@ -1,0 +1,7 @@
+# Transform config for VQA-GNN.
+# No transforms applied: visual features are pre-extracted and
+# pre-normalized; graph features come from fixed embeddings.
+defaults:
+  - batch_transforms: null
+  - instance_transforms: null
+  - _self_

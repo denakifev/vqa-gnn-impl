@@ -10,6 +10,15 @@ wandb
 comet_ml
 hydra-core
 
+# VQA-GNN additional dependencies:
+# Required for question encoding (AutoModel, AutoTokenizer from Hugging Face).
+# Default encoder is roberta-large (paper-aligned); override via text_encoder_name config.
+transformers>=4.30.0
+
+# Required for reading pre-extracted visual features and KG subgraphs
+# stored in HDF5 format (standard format for bottom-up attention features).
+h5py>=3.8.0
+
 black
 isort
 pre-commit

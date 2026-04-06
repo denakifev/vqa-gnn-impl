@@ -1,0 +1,5 @@
+# Null batch transforms: no transforms applied.
+# Used by VQA-GNN which does not require input normalization
+# (features are already normalized at extraction time).
+train: null
+inference: null

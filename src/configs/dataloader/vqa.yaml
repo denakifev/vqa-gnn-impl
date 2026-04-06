@@ -1,0 +1,6 @@
+_target_: torch.utils.data.DataLoader
+# Keep the template default for now, but on Kaggle with `roberta-large`
+# you will likely want to override this to 4-8 depending on GPU memory.
+batch_size: 32
+num_workers: 4
+pin_memory: True

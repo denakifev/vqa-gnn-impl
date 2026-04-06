@@ -1,0 +1,42 @@
+_target_: src.model.VQAGNNModel
+
+# Visual feature dimension (bottom-up attention: 2048)
+d_visual: 2048
+
+# KG node feature dimension.
+# MUST MATCH: d_kg in src/configs/datasets/vqa.yaml (and vqa_eval.yaml)
+#             AND the --d-kg value used when running scripts/prepare_kg_graphs.py
+#
+# ConceptNet Numberbatch: 300-dim (full) or truncated to any smaller size.
+# Default here is 100 for demo (VQADemoDataset). For real data from
+# prepare_kg_graphs.py with default --d-kg 300, set this to 300.
+# Deviation from paper: paper uses custom KG embeddings (dim not disclosed).
+d_kg: 100
+
+# Hidden dimension throughout GNN and classification head
+# 1024 matches RoBERTa-large hidden size and is the paper-aligned default.
+d_hidden: 1024
+
+# Number of dense GAT layers
+# Deviation: paper reports 3 layers; increase for experiments.
+num_gnn_layers: 3
+
+# Attention heads per GAT layer (d_hidden must be divisible by num_heads)
+num_heads: 8
+
+# Answer vocabulary size (VQA v2 open-ended: 3129)
+num_answers: 3129
+
+# Dropout rate
+dropout: 0.1
+
+# Text encoder for question encoding.
+# The ICCV 2023 paper explicitly states that it uses pretrained RoBERTa for
+# the QA-context node. This repo standardizes on `roberta-large` by default
+# for maximal reproducibility.
+text_encoder_name: "roberta-large"
+
+# Whether to freeze text encoder weights during training.
+# Set True for faster smoke-test runs or limited GPU memory.
+# The paper fine-tunes the QA-context encoder end-to-end.
+freeze_text_encoder: False
