@@ -236,7 +236,9 @@ class VQADataset(Dataset):
             ) from e
 
         # Build index from JSON files
-        self._index = self._build_index()
+        logger.info(f"Building VQADataset index [{partition}]...")
+        early_limit = limit if (limit is not None and not shuffle_index) else None
+        self._index = self._build_index(limit=early_limit)
 
         if shuffle_index:
             random.seed(42)
@@ -259,8 +261,17 @@ class VQADataset(Dataset):
 
         self.collate_fn = vqa_collate_fn
 
-    def _build_index(self) -> list:
-        """Build list of dicts from question and annotation JSON files."""
+    def _build_index(self, limit: Optional[int] = None) -> list:
+        """
+        Build list of sample metadata from question and annotation JSON files.
+
+        Important implementation detail:
+            We intentionally keep the in-memory index compact. Storing a dense
+            soft-answer vector of length `num_answers` for every train example
+            would consume tens of GB of host RAM on VQA v2. Instead we store
+            only the normalized answer indices (up to 10 per question) and
+            materialize the dense score vector lazily in `__getitem__`.
+        """
         q_path = self.data_dir / "questions" / f"{self.partition}_questions.json"
         _check_file_exists(q_path, f"Questions ({self.partition})")
         with open(q_path) as f:
@@ -278,10 +289,12 @@ class VQADataset(Dataset):
                         "question_id": item["question_id"],
                         "image_id": item["image_id"],
                         "question": item["question"],
-                        "answer_scores": None,  # no labels for test
+                        "answer_indices": None,  # no labels for test
                         "label": -1,
                     }
                 )
+                if limit is not None and len(index) >= limit:
+                    break
             return index
 
         ann_path = self.data_dir / "annotations" / f"{self.partition}_annotations.json"
@@ -295,17 +308,19 @@ class VQADataset(Dataset):
             if qid not in q_map:
                 continue
             q_item = q_map[qid]
-            scores = _build_answer_scores(ann["answers"], self.answer_to_idx)
-            label = int(scores.argmax())
+            answer_indices = _extract_answer_indices(ann["answers"], self.answer_to_idx)
+            label = _build_answer_label(answer_indices)
             index.append(
                 {
                     "question_id": qid,
                     "image_id": q_item["image_id"],
                     "question": q_item["question"],
-                    "answer_scores": scores.tolist(),
+                    "answer_indices": answer_indices,
                     "label": label,
                 }
             )
+            if limit is not None and len(index) >= limit:
+                break
         return index
 
     def _open_h5(self):
@@ -354,8 +369,12 @@ class VQADataset(Dataset):
         )
 
         # Answer labels
-        if entry["answer_scores"] is not None:
-            answer_scores = torch.tensor(entry["answer_scores"], dtype=torch.float32)
+        if entry["answer_indices"] is not None:
+            answer_scores = torch.from_numpy(
+                _build_answer_scores_from_indices(
+                    entry["answer_indices"], self.num_answers
+                )
+            )
         else:
             answer_scores = torch.zeros(self.num_answers, dtype=torch.float32)
         label = torch.tensor(entry["label"], dtype=torch.long)
@@ -559,14 +578,50 @@ def _build_answer_scores(
     Returns:
         scores (np.ndarray): float32 array of shape [num_answers].
     """
-    num_answers = len(answer_to_idx)
-    counts = np.zeros(num_answers, dtype=np.float32)
+    answer_indices = _extract_answer_indices(answers, answer_to_idx)
+    return _build_answer_scores_from_indices(answer_indices, len(answer_to_idx))
+
+
+def _extract_answer_indices(answers: list, answer_to_idx: dict) -> list[int]:
+    """
+    Convert raw VQA answer annotations into vocabulary indices.
+
+    Each question has up to 10 human answers. We keep only the indices of
+    in-vocabulary normalized answers, which is dramatically more memory
+    efficient than storing a dense float vector per example in the dataset
+    index.
+    """
+    indices = []
     for a in answers:
         ans = _normalize_vqa_answer(a["answer"])
-        if ans in answer_to_idx:
-            counts[answer_to_idx[ans]] += 1.0
-    scores = np.minimum(counts / 3.0, 1.0)
-    return scores
+        idx = answer_to_idx.get(ans)
+        if idx is not None:
+            indices.append(idx)
+    return indices
+
+
+def _build_answer_scores_from_indices(
+    answer_indices: list[int], num_answers: int
+) -> np.ndarray:
+    """Build the dense VQA soft-target vector from sparse answer indices."""
+    counts = np.zeros(num_answers, dtype=np.float32)
+    if answer_indices:
+        np.add.at(counts, np.asarray(answer_indices, dtype=np.int64), 1.0)
+    return np.minimum(counts / 3.0, 1.0)
+
+
+def _build_answer_label(answer_indices: list[int]) -> int:
+    """
+    Compute the hard label used by metrics from sparse answer indices.
+
+    This matches `argmax` over the soft score vector but avoids constructing a
+    dense vector during dataset index creation.
+    """
+    if not answer_indices:
+        return 0
+    values, counts = np.unique(np.asarray(answer_indices, dtype=np.int64), return_counts=True)
+    max_count = counts.max()
+    return int(values[counts == max_count].min())
 
 
 def _pad_or_trim(t: torch.Tensor, target_len: int) -> torch.Tensor:
