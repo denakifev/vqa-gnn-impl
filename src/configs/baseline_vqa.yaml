@@ -55,10 +55,10 @@ loss_function:
 trainer:
   log_step: 20
   # Progress-bar behavior:
+  #   on    -> always show tqdm (default, matches the original behavior)
   #   auto  -> show tqdm on TTY, disable when stdout is piped (e.g. Kaggle Python cell)
-  #   on    -> always show tqdm
   #   off   -> never show tqdm
-  progress_bar: auto
+  progress_bar: on
   n_epochs: 20
   # Iteration-based training (epoch_len iterations per "epoch").
   # For real VQA v2: consider increasing to 5000-10000 per "epoch".

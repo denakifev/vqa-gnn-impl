@@ -1,3 +1,10 @@
-mkdir -p ~/.kaggle
-mv /Users/srs15/Downloads/kaggle.json ~/.kaggle/kaggle.json
-chmod 600 ~/.kaggle/kaggle.json
+mkdir -p data/roberta-large
+
+./.venv/bin/python - <<'PY'
+from transformers import AutoTokenizer, AutoModel
+
+AutoTokenizer.from_pretrained("roberta-large").save_pretrained("data/roberta-large")
+AutoModel.from_pretrained("roberta-large").save_pretrained("data/roberta-large")
+
+print("Saved roberta-large to data/roberta-large")
+PY
