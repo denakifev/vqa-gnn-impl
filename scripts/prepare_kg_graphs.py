@@ -148,10 +148,16 @@ def load_numberbatch(path: str, target_dim: int = 300):
     """
     Load ConceptNet Numberbatch embeddings from a .txt or .txt.gz file.
 
-    File format (English-only version):
-        <num_terms> <embedding_dim>
-        /c/en/word  0.1 0.2 ... 0.3
-        ...
+    Supported file formats:
+        1. English-only Numberbatch:
+           <num_terms> <embedding_dim>
+           cat  0.1 0.2 ... 0.3
+           fire_truck  0.1 0.2 ... 0.3
+
+        2. Full ConceptNet URI format:
+           <num_terms> <embedding_dim>
+           /c/en/cat  0.1 0.2 ... 0.3
+           /c/en/fire_truck  0.1 0.2 ... 0.3
 
     Args:
         path (str): path to numberbatch-en.txt or numberbatch-en.txt.gz
@@ -190,9 +196,9 @@ def load_numberbatch(path: str, target_dim: int = 300):
             # No header; try to infer from first data line
             try:
                 parts = first_line
-                # First token is the entity URI, rest are floats
+                # First token is either a ConceptNet URI or an english-only term.
                 embedding_dim = len(parts) - 1
-                entity_key = _uri_to_key(parts[0])
+                entity_key = _numberbatch_key(parts[0])
                 if entity_key is not None:
                     vec = np.array(parts[1:], dtype=np.float32)
                     if target_dim < embedding_dim:
@@ -206,11 +212,10 @@ def load_numberbatch(path: str, target_dim: int = 300):
             line = line.strip()
             if not line:
                 continue
-            parts = line.split(" ")
+            parts = line.split()
             if len(parts) < 2:
                 continue
-            uri = parts[0]
-            entity_key = _uri_to_key(uri)
+            entity_key = _numberbatch_key(parts[0])
             if entity_key is None:
                 continue
             try:
@@ -252,6 +257,24 @@ def _uri_to_key(uri: str):
     # Replace underscores with spaces
     entity = entity.replace("_", " ")
     return entity if entity else None
+
+
+def _numberbatch_key(token: str):
+    """
+    Convert a Numberbatch entry key to the normalized entity string used in KG
+    lookup.
+
+    Supports both:
+        - full ConceptNet URIs, e.g. /c/en/fire_truck -> 'fire truck'
+        - english-only Numberbatch tokens, e.g. fire_truck -> 'fire truck'
+    """
+    if token.startswith("/"):
+        return _uri_to_key(token)
+
+    token = token.strip()
+    if not token:
+        return None
+    return token.replace("_", " ")
 
 
 # ---------------------------------------------------------------------------

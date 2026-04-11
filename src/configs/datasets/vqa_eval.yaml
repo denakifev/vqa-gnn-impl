@@ -11,6 +11,6 @@ val:
   num_visual_nodes: 36
   max_kg_nodes: 30
   d_visual: 2048
-  d_kg: 100  # must match model config and prepare_kg_graphs.py --d-kg
+  d_kg: 300  # must match model config and prepare_kg_graphs.py --d-kg
   text_encoder_name: "roberta-large"
   instance_transforms: ${transforms.instance_transforms.inference}

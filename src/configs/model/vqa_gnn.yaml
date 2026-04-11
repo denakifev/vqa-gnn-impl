@@ -8,10 +8,10 @@ d_visual: 2048
 #             AND the --d-kg value used when running scripts/prepare_kg_graphs.py
 #
 # ConceptNet Numberbatch: 300-dim (full) or truncated to any smaller size.
-# Default here is 100 for demo (VQADemoDataset). For real data from
-# prepare_kg_graphs.py with default --d-kg 300, set this to 300.
+# Default here is 300 for real VQA data prepared with Numberbatch.
+# Demo configs keep their own d_kg=100.
 # Deviation from paper: paper uses custom KG embeddings (dim not disclosed).
-d_kg: 100
+d_kg: 300
 
 # Hidden dimension throughout GNN and classification head
 # 1024 matches RoBERTa-large hidden size and is the paper-aligned default.

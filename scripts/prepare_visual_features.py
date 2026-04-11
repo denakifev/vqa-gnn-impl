@@ -26,7 +26,12 @@ DEVIATION FROM PAPER:
 
 Supported input formats:
     --format tsv    TSV file from the bottom-up-attention official release.
-                    Each line: image_id <tab> num_boxes <tab> features_b64 [<tab> boxes_b64]
+                    Supports both:
+                      1. Official 6-column format:
+                         image_id <tab> image_w <tab> image_h <tab> num_boxes
+                         <tab> boxes_b64 <tab> features_b64
+                      2. Simplified 3-column format:
+                         image_id <tab> num_boxes <tab> features_b64
                     Features are base64-encoded float32 arrays.
 
     --format npy    Directory of per-image .npy files.
@@ -97,8 +102,11 @@ def _read_tsv(tsv_path: Path, num_fixed_boxes: int):
     """
     Yield (image_id_str, features_np) from a bottom-up attention TSV file.
 
-    TSV columns (from Anderson et al. bottom-up-attention repo):
-        image_id, num_boxes, features (base64), [boxes (base64)]
+    Supported TSV layouts:
+        1. Official Anderson et al. release:
+           image_id, image_w, image_h, num_boxes, boxes (base64), features (base64)
+        2. Simplified layout:
+           image_id, num_boxes, features (base64), [boxes (base64)]
 
     Features are base64-encoded float32 arrays of shape [num_boxes, 2048].
 
@@ -128,14 +136,30 @@ def _read_tsv(tsv_path: Path, num_fixed_boxes: int):
                 continue
 
             image_id = str(int(parts[0]))
-            # num_boxes = int(parts[1])  # actual num boxes in file
+
+            # Official bottom-up-attention release:
+            #   image_id, image_w, image_h, num_boxes, boxes_b64, features_b64
+            if len(parts) >= 6:
+                num_boxes_str = parts[3]
+                features_b64 = parts[5]
+            # Simplified TSV:
+            #   image_id, num_boxes, features_b64[, boxes_b64]
+            else:
+                num_boxes_str = parts[1]
+                features_b64 = parts[2]
 
             # Decode base64 features
             try:
-                feat_bytes = base64.b64decode(parts[2])
+                num_boxes = int(num_boxes_str)
+                feat_bytes = base64.b64decode(features_b64)
                 feats = np.frombuffer(feat_bytes, dtype=np.float32)
-                feature_dim = feats.size // int(parts[1])
-                feats = feats.reshape(int(parts[1]), feature_dim)
+                if num_boxes <= 0 or feats.size % num_boxes != 0:
+                    raise ValueError(
+                        f"decoded feature length {feats.size} is not divisible "
+                        f"by num_boxes={num_boxes}"
+                    )
+                feature_dim = feats.size // num_boxes
+                feats = feats.reshape(num_boxes, feature_dim)
             except Exception as e:
                 print(
                     f"[WARNING] Could not decode features for image_id={image_id}: {e}",
