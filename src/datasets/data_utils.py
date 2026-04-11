@@ -36,6 +36,9 @@ def move_batch_transforms_to_device(batch_transforms, device):
             tensor name.
         device (str): device to use for batch transforms.
     """
+    if batch_transforms is None:
+        return
+
     for transform_type in batch_transforms.keys():
         transforms = batch_transforms.get(transform_type)
         if transforms is not None:
@@ -59,7 +62,8 @@ def get_dataloaders(config, device):
             tensor name.
     """
     # transforms or augmentations init
-    batch_transforms = instantiate(config.transforms.batch_transforms)
+    batch_transforms_cfg = config.transforms.get("batch_transforms", None)
+    batch_transforms = instantiate(batch_transforms_cfg)
     move_batch_transforms_to_device(batch_transforms, device)
 
     # dataset partitions init

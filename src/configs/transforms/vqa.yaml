@@ -1,7 +1,16 @@
 # Transform config for VQA-GNN.
-# No transforms applied: visual features are pre-extracted and
-# pre-normalized; graph features come from fixed embeddings.
-defaults:
-  - batch_transforms: null
-  - instance_transforms: null
-  - _self_
+# No transforms are applied: visual features are pre-extracted and
+# graph features come from fixed embeddings.
+#
+# Keep the keys explicit so Hydra users can rely on:
+#   transforms.batch_transforms
+#   transforms.instance_transforms
+# without requiring extra overrides during train/inference.
+
+batch_transforms:
+  train: null
+  inference: null
+
+instance_transforms:
+  train: null
+  inference: null
