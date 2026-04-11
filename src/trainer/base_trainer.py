@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import sys
 
 import torch
 from numpy import inf
@@ -203,7 +204,7 @@ class BaseTrainer:
         self.writer.set_step((epoch - 1) * self.epoch_len)
         self.writer.add_scalar("epoch", epoch)
         for batch_idx, batch in enumerate(
-            tqdm(self.train_dataloader, desc="train", total=self.epoch_len)
+            self._progress_bar(self.train_dataloader, desc="train", total=self.epoch_len)
         ):
             try:
                 batch = self.process_batch(
@@ -264,7 +265,7 @@ class BaseTrainer:
         self.model.eval()
         self.evaluation_metrics.reset()
         with torch.no_grad():
-            for batch_idx, batch in tqdm(
+            for batch_idx, batch in self._progress_bar(
                 enumerate(dataloader),
                 desc=part,
                 total=len(dataloader),
@@ -280,6 +281,44 @@ class BaseTrainer:
             )  # log only the last batch during inference
 
         return self.evaluation_metrics.result()
+
+    def _progress_bar(self, iterable, **kwargs):
+        """
+        Create a tqdm progress bar with notebook-/pipe-friendly defaults.
+
+        Why this exists:
+            When training is launched from a Kaggle/Colab Python cell via
+            `subprocess.Popen(..., stdout=PIPE)`, raw tqdm carriage returns are
+            often rendered as a new line on every refresh. In that case the
+            child process is writing to a non-TTY stream, so we disable tqdm by
+            default and keep the logs readable.
+
+        Config:
+            trainer.progress_bar / inferencer.progress_bar:
+                - "auto" (default): enable on TTY, disable on non-TTY
+                - true / "on": always enable
+                - false / "off": always disable
+        """
+        progress_bar_mode = self.cfg_trainer.get("progress_bar", "auto")
+
+        if isinstance(progress_bar_mode, str):
+            normalized = progress_bar_mode.lower()
+            if normalized in {"off", "false", "0", "none"}:
+                disable = True
+            elif normalized in {"on", "true", "1"}:
+                disable = False
+            else:
+                disable = not sys.stdout.isatty()
+        else:
+            disable = not bool(progress_bar_mode)
+
+        return tqdm(
+            iterable,
+            disable=disable,
+            dynamic_ncols=True,
+            mininterval=1.0,
+            **kwargs,
+        )
 
     def _monitor_performance(self, logs, not_improved_count):
         """

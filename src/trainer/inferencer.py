@@ -1,5 +1,4 @@
 import torch
-from tqdm.auto import tqdm
 
 from src.metrics.tracker import MetricTracker
 from src.trainer.base_trainer import BaseTrainer
@@ -173,7 +172,7 @@ class Inferencer(BaseTrainer):
             (self.save_path / part).mkdir(exist_ok=True, parents=True)
 
         with torch.no_grad():
-            for batch_idx, batch in tqdm(
+            for batch_idx, batch in self._progress_bar(
                 enumerate(dataloader),
                 desc=part,
                 total=len(dataloader),
