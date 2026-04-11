@@ -1,0 +1,24 @@
+# VCR demo dataset (synthetic) for smoke testing the Q→A pipeline.
+# DOES NOT reproduce any paper result.
+
+train:
+  _target_: src.datasets.VCRDemoDataset
+  task_mode: "qa"
+  num_samples: 64
+  max_context_len: 64
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  d_kg: 300  # must match vqa_gnn_vcr.yaml d_kg
+  seed: 42
+
+val:
+  _target_: src.datasets.VCRDemoDataset
+  task_mode: "qa"
+  num_samples: 32
+  max_context_len: 64
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  d_kg: 300  # must match vqa_gnn_vcr.yaml d_kg
+  seed: 0

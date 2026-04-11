@@ -1,0 +1,7 @@
+_target_: torch.utils.data.DataLoader
+# VCR: each item is expanded B→B×4 inside the collate.
+# Effective model batch = batch_size × 4. With roberta-large + B=8 you get 32
+# model forward passes per step. Reduce batch_size on memory-constrained GPUs.
+batch_size: 8
+num_workers: 4
+pin_memory: True

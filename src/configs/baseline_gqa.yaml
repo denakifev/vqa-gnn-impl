@@ -1,0 +1,80 @@
+# Training config for VQA-GNN on GQA task (arXiv:2205.11501).
+# This is a PAPER-ALIGNED config. See GAP_ANALYSIS.md for deviations.
+#
+# GQA: open-ended VQA on Visual Genome images with compositional questions.
+# Answer space: ~1852 answers (GQA balanced split).
+# Metric: exact-match accuracy.
+#
+# Default: DEMO mode (synthetic data, no real GQA data needed).
+# For real GQA training override: datasets=gqa
+#
+# Commands:
+#   Demo smoke-test:
+#     python train.py --config-name baseline_gqa
+#
+#   Real GQA training:
+#     python train.py --config-name baseline_gqa \
+#       datasets=gqa \
+#       datasets.train.data_dir=data/gqa \
+#       datasets.train.answer_vocab_path=data/gqa/gqa_answer_vocab.json \
+#       datasets.val.data_dir=data/gqa \
+#       datasets.val.answer_vocab_path=data/gqa/gqa_answer_vocab.json
+#
+#   Kaggle:
+#     python train.py --config-name baseline_gqa \
+#       datasets=gqa \
+#       datasets.train.data_dir=/kaggle/input/gqa-gnn-data \
+#       datasets.train.answer_vocab_path=/kaggle/input/gqa-gnn-data/gqa_answer_vocab.json \
+#       datasets.val.data_dir=/kaggle/input/gqa-gnn-data \
+#       datasets.val.answer_vocab_path=/kaggle/input/gqa-gnn-data/gqa_answer_vocab.json \
+#       trainer.save_dir=/kaggle/working/saved
+
+defaults:
+  - model: vqa_gnn_gqa
+  - writer: cometml
+  - metrics: gqa
+  - datasets: gqa_demo          # change to 'gqa' for real data
+  - dataloader: gqa
+  - transforms: vqa
+  - _self_
+
+writer:
+  project_name: "vqa_gnn"
+  run_name: "gqa_baseline"
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 1e-4
+  weight_decay: 1e-2
+
+lr_scheduler:
+  _target_: torch.optim.lr_scheduler.StepLR
+  gamma: 0.5
+  step_size: ${trainer.epoch_len}
+
+loss_function:
+  _target_: src.loss.GQALoss
+
+trainer:
+  log_step: 20
+  progress_bar: on
+  n_epochs: 20
+  epoch_len: 5000
+  device_tensors:
+    - "visual_features"
+    - "question_input_ids"
+    - "question_attention_mask"
+    - "graph_node_features"
+    - "graph_adj"
+    - "graph_node_types"
+    - "labels"
+  resume_from: null
+  device: auto
+  override: False
+  monitor: "max val_GQA_Accuracy"
+  save_period: 5
+  early_stop: 10
+  save_dir: "saved"
+  seed: 42
+  skip_oom: True
+  max_grad_norm: 1.0

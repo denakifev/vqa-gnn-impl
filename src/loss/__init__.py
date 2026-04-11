@@ -1,7 +1,7 @@
-from src.loss.example import ExampleLoss
-from src.loss.vqa_loss import VQALoss
+from src.loss.gqa_loss import GQALoss
+from src.loss.vcr_loss import VCRLoss
 
 __all__ = [
-    "ExampleLoss",
-    "VQALoss",
+    "GQALoss",
+    "VCRLoss",
 ]

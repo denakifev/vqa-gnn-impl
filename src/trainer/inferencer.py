@@ -125,18 +125,32 @@ class Inferencer(BaseTrainer):
             for met in self.metrics["inference"]:
                 metrics.update(met.name, met(**batch))
 
-        # Some saving logic. This is an example
-        # Use if you need to save predictions on disk
+        # Save predictions to disk.
+        # Two modes are supported:
+        #   VCR: logits [B*n_candidates, 1], answer_label [B]
+        #        Detected by presence of "n_candidates" in batch.
+        #   GQA / standard: logits [B, num_answers], labels [B]
+        if "n_candidates" in batch:
+            # VCR 4-way multiple choice: reshape to [B, 4], argmax over candidates
+            n_cand = batch["n_candidates"]
+            B = batch["answer_label"].size(0)
+            scores = batch["logits"].view(B, n_cand)   # [B, 4]
+            pred_labels = scores.argmax(dim=-1)         # [B]
+            gt_labels = batch["answer_label"]           # [B]
+            batch_size = B
+        else:
+            # GQA / standard: argmax over answer vocabulary
+            batch_size = batch["logits"].shape[0]
+            pred_labels = batch["logits"].argmax(dim=-1)   # [B]
+            gt_labels = batch["labels"]                     # [B]
 
-        batch_size = batch["logits"].shape[0]
         current_id = batch_idx * batch_size
 
         for i in range(batch_size):
             # clone because of
             # https://github.com/pytorch/pytorch/issues/1995
-            logits = batch["logits"][i].clone()
-            label = batch["labels"][i].clone()
-            pred_label = logits.argmax(dim=-1)
+            pred_label = pred_labels[i].clone()
+            label = gt_labels[i].clone()
 
             output_id = current_id + i
 

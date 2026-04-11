@@ -1,8 +1,9 @@
-from src.datasets.example import ExampleDataset
-from src.datasets.vqa_dataset import VQADataset, VQADemoDataset
+from src.datasets.gqa_dataset import GQADataset, GQADemoDataset
+from src.datasets.vcr_dataset import VCRDataset, VCRDemoDataset
 
 __all__ = [
-    "ExampleDataset",
-    "VQADataset",
-    "VQADemoDataset",
+    "GQADataset",
+    "GQADemoDataset",
+    "VCRDataset",
+    "VCRDemoDataset",
 ]

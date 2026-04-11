@@ -14,9 +14,11 @@ Deviation from paper:
   defaults to `roberta-large` as the paper-aligned text encoder, while still
   supporting overrides for smaller backbones when resources are limited.
 - The GNN is implemented with dense adjacency matrices (no torch_geometric)
-  to minimize dependencies. This may be memory-intensive for very large graphs
-  but is functionally equivalent for the graph sizes used in this paper
-  (N_total = N_visual + 1 + N_kg ≈ 67 nodes).
+  to minimize dependencies. This is an engineering approximation: the paper
+  does not fully specify the GNN variant, so dense GAT is not guaranteed to be
+  identical to the paper's implementation. It is expected to be comparable for
+  the small graph sizes used here (N_total = N_visual + 1 + N_kg ≈ 67 nodes),
+  but this has not been verified numerically.
 - Readout uses learnable attention pooling over all graph nodes.
 """
 
@@ -245,8 +247,10 @@ class VQAGNNModel(nn.Module):
         Deviations from paper:
             - Paper uses pretrained RoBERTa for QA-context encoding. This repo
               defaults to `roberta-large` as the closest standard checkpoint.
-            - Paper uses torch_geometric / custom GNN; here dense GAT.
-            - num_answers=3129 follows VQA v2 open-ended standard.
+            - Paper uses torch_geometric / custom GNN; here dense GAT
+              (engineering approximation; paper's GNN variant not fully specified).
+            - Default num_answers=3129 is a fallback; paper-aligned configs
+              override this: VCR uses num_answers=1, GQA uses num_answers=1852.
         """
         super().__init__()
 

@@ -1,0 +1,35 @@
+# Inference config for GQA with VQA-GNN (arXiv:2205.11501).
+#
+# Commands:
+#   Demo smoke-test:
+#     python inference.py --config-name inference_gqa \
+#       inferencer.skip_model_load=True
+#
+#   Real GQA inference:
+#     python inference.py --config-name inference_gqa \
+#       datasets=gqa_eval \
+#       datasets.val.data_dir=data/gqa \
+#       datasets.val.answer_vocab_path=data/gqa/gqa_answer_vocab.json \
+#       inferencer.from_pretrained=saved/gqa_baseline/model_best.pth
+
+defaults:
+  - model: vqa_gnn_gqa
+  - metrics: gqa
+  - datasets: gqa_demo          # change to 'gqa_eval' for real data
+  - dataloader: gqa
+  - transforms: vqa
+  - _self_
+
+inferencer:
+  device_tensors:
+    - "visual_features"
+    - "question_input_ids"
+    - "question_attention_mask"
+    - "graph_node_features"
+    - "graph_adj"
+    - "graph_node_types"
+    - "labels"
+  device: auto
+  save_path: "gqa_preds"
+  seed: 42
+  from_pretrained: "saved/gqa_baseline/model_best.pth"

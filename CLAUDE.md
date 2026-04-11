@@ -4,7 +4,7 @@
 
 Этот репозиторий предназначен для воспроизводимой открытой реализации статьи **VQA-GNN: Reasoning with Multimodal Knowledge via Graph Neural Networks for Visual Question Answering**.
 
-Текущее состояние репозитория: это общий шаблон проекта на PyTorch и Hydra с демонстрационными компонентами (`ExampleDataset`, `BaselineModel`, `ExampleLoss`, `ExampleMetric`). Реализация VQA-GNN, реальные датасеты VQA и пользовательская документация проекта в репозитории пока отсутствуют. Claude Code должен развивать проект, не выдавая шаблонные примеры за реализацию статьи.
+Текущее состояние репозитория: базовый VQA-GNN уже реализован. Основной контур статьи проходит через VCR (Q→A, QA→R) и GQA, а не через VQA v2. Демонстрационные компоненты (`ExampleDataset`, `BaselineModel`, `ExampleLoss`, `ExampleMetric`) сохранены как инфраструктурные примеры, но не являются контуром статьи. Claude Code должен придерживаться компонентов, согласованных со статьёй (VCR/GQA), и не выдавать инженерные приближения за точное воспроизведение статьи.
 
 ## Контекст проекта
 
@@ -44,13 +44,13 @@
 Структура `src/`:
 
 - `src/configs/` — Hydra-конфигурации.
-- `src/configs/baseline.yaml` — базовый training config, который собирает `model`, `writer`, `metrics`, `datasets`, `dataloader`, `transforms`, а также содержит `optimizer`, `lr_scheduler`, `loss_function`, `trainer`.
-- `src/configs/inference.yaml` — базовый inference config.
+- `src/configs/baseline.yaml` — базовый конфиг обучения, который собирает `model`, `writer`, `metrics`, `datasets`, `dataloader`, `transforms`, а также содержит `optimizer`, `lr_scheduler`, `loss_function`, `trainer`.
+- `src/configs/inference.yaml` — базовый конфиг инференса.
 - `src/configs/model/` — конфиги модели. Сейчас есть только `baseline.yaml` для `src.model.BaselineModel`.
 - `src/configs/datasets/` — конфиги наборов данных. Сейчас это только примерные `example*.yaml`.
 - `src/configs/dataloader/` — конфиги `DataLoader`.
 - `src/configs/metrics/` — конфиги метрик.
-- `src/configs/transforms/` — конфиги batch и instance transforms.
+- `src/configs/transforms/` — конфиги batch- и instance-трансформаций.
 - `src/configs/writer/` — конфиги для `WandBWriter` и `CometMLWriter`.
 
 - `src/model/` — модели. Сейчас содержит только демонстрационный `BaselineModel` в `baseline_model.py`.
@@ -67,17 +67,22 @@
 - `src/utils/io_utils.py` — задаёт `ROOT_PATH` и содержит JSON I/O helpers.
 - `src/utils/init_utils.py` — сохраняет `config.yaml`, `git_commit.txt`, `git_diff.patch`, управляет `run_id` и инициализирует logging.
 
-Наблюдения по текущему состоянию:
+Наблюдения по текущему состоянию (актуально на 2026-04-11):
 
-- `README.md` присутствует и описывает pipeline, Kaggle, CometML, deviations.
+- `README.md` присутствует и описывает пайплайн, Kaggle, CometML и отклонения от статьи.
 - `CITATION.cff` отсутствует.
-- Реализация VQA-GNN присутствует: `VQAGNNModel`, `VQADataset`, `VQADemoDataset`,
-  `VQALoss`, `VQAAccuracy`, preprocessing scripts, configs.
-- Реальные VQA-датасеты подключены через `src/datasets/vqa_dataset.py` и
-  `src/configs/datasets/vqa.yaml`, но требуют заранее подготовленных артефактов.
-- Demo smoke-test (`VQADemoDataset`) работает, но всегда загружает `roberta-large`.
+- **Контур статьи реализован**: `VQAGNNModel`, `VCRDataset`/`VCRDemoDataset`, `GQADataset`/`GQADemoDataset`,
+  `VCRLoss`, `GQALoss`, `VCRQAAccuracy`, `VCRQARAccuracy`, `GQAAccuracy`, а также скрипты препроцессинга (`scripts/prepare_vcr_data.py`, `scripts/prepare_gqa_data.py`).
+- Конфиги контура статьи: `baseline_vcr_qa.yaml`, `baseline_vcr_qar.yaml`, `baseline_gqa.yaml`, `inference_vcr.yaml`, `inference_gqa.yaml`.
+- **Основной бенчмарк — VCR и GQA**, а не VQA v2. Код VQA v2 сохранён как устаревший контур.
+- Demo-смоук-тесты (`VCRDemoDataset`, `GQADemoDataset`) **НЕ загружают** `roberta-large` — используются синтетические тензоры.
+- **32 unit-теста в `tests/test_paper_path.py` проходят** (collate, loss, metrics, GNN layer, no VQA v2 leakage).
+- `inferencer.py` поддерживает оба режима: VCR (через ключ `n_candidates`) и GQA (через ключ `labels`).
 - Числовые результаты статьи **не подтверждены** реальным end-to-end запуском.
 - Каталоги `data/` и `saved/` не закоммичены, но ожидаются кодом во время выполнения.
+- **Ключевые инженерные приближения**: dense GAT вместо sparse GNN статьи; KG из ConceptNet Numberbatch 300-dim; извлечение сущностей через токенизацию; визуальные признаки предполагаются в формате 36×2048 bottom-up; ссылки на объекты VCR разворачиваются в названия категорий.
+- `GAP_ANALYSIS.md` — история расхождений до текущего этапа.
+- `PAPER_ALIGNMENT_REPORT.md` — строгая классификация компонентов и чек-лист готовности.
 
 ## Существующие соглашения и точки опоры
 
@@ -86,7 +91,7 @@
 - Имена модулей и файлов — в `snake_case`, классы — в `PascalCase`.
 - Экспортируемые классы обычно пробрасываются через `__init__.py` пакетов.
 - Код снабжён инженерными docstring-комментариями на английском.
-- Batch-ключи должны совпадать между `Dataset.__getitem__`, `collate_fn`, `model.forward`, `loss.forward` и metric wrappers.
+- Batch-ключи должны совпадать между `Dataset.__getitem__`, `collate_fn`, `model.forward`, `loss.forward` и обёртками метрик.
 - Сохранение артефактов уже реализовано через `src/utils/init_utils.py`; нельзя дублировать этот механизм в новой ветке кода.
 
 ## Правила для Claude Code
@@ -96,7 +101,7 @@
 - Использовать существующие точки входа `train.py` и `inference.py`, а не создавать альтернативные training/inference-скрипты без крайней необходимости.
 - Переиспользовать существующие Hydra-группы в `src/configs/`; новые конфиги добавлять в уже существующие разделы.
 - Переиспользовать текущие механизмы логирования, сохранения конфигов, чекпойнтов и git patch.
-- Не дублировать уже существующие abstractions из `src/trainer/`, `src/logger/`, `src/utils/` и `src/datasets/data_utils.py`.
+- Не дублировать уже существующие абстракции из `src/trainer/`, `src/logger/`, `src/utils/` и `src/datasets/data_utils.py`.
 - Не добавлять новые фреймворки без необходимости. Если для точной реализации статьи понадобится внешняя graph-библиотека, это нужно явно обосновать в документации и конфигурации.
 - Не выдавать демонстрационные компоненты шаблона за части VQA-GNN.
 - Не подделывать результаты, отсутствующие зависимости, доступность данных или полноту воспроизведения статьи.
@@ -106,7 +111,7 @@
 ## Правила воспроизводимости
 
 - Любой недостающий компонент статьи нужно отмечать честно, а не закрывать молчаливой заменой.
-- Любое допущение о данных, preprocessing, knowledge source, feature extractor, tokenizer или формате графа нужно фиксировать в документации и конфиге.
+- Любое допущение о данных, препроцессинге, источнике знаний, feature extractor, tokenizer или формате графа нужно фиксировать в документации и конфиге.
 - Нужно сохранять воспроизводимость через уже существующий механизм сохранения артефактов в директории запуска.
 - Обязательные артефакты воспроизводимости: `config.yaml`, `git_commit.txt`, `git_diff.patch`.
 - Все запускаемые эксперименты должны иметь явный `run_name`, осмысленные значения seed и конфиги, достаточные для повторного запуска из корня репозитория.
@@ -139,7 +144,7 @@
 
 - корректную структуру данных и batch-интерфейс;
 - базовую модель статьи;
-- совместимость с текущим train/inference pipeline;
+- совместимость с текущим пайплайном обучения и инференса;
 - честную документацию ограничений воспроизводимости.
 
 Что не является приоритетом на этой стадии:

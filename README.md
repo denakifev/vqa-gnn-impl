@@ -6,50 +6,80 @@
 > ICCV 2023 / arXiv:2205.11501
 
 Репозиторий реализует VQA-GNN внутри существующего PyTorch + Hydra шаблона.
-Цель — честная, воспроизводимая, inженерно аккуратная попытка воспроизвести базовый контур
+Цель — честная, воспроизводимая, инженерно аккуратная попытка воспроизвести базовый контур
 статьи. Репозиторий не утверждает полного воспроизведения численных результатов — до тех
 пор, пока не проведён реальный end-to-end эксперимент с правильными артефактами данных.
+
+**Детальный анализ расхождений:** [GAP_ANALYSIS.md](GAP_ANALYSIS.md)
+
+---
+
+## Бенчмарки статьи (согласовано со статьёй)
+
+Статья VQA-GNN оценивается на двух датасетах:
+
+| Датасет | Тип задачи | Метрики | Конфиг обучения |
+|---|---|---|---|
+| **VCR** (Visual Commonsense Reasoning) | multiple choice из 4 вариантов | Q→A, QA→R, Q→AR | `baseline_vcr_qa.yaml`, `baseline_vcr_qar.yaml` |
+| **GQA** (Generalized VQA) | open-ended (фиксированный словарь) | accuracy (точное совпадение) | `baseline_gqa.yaml` |
+
+**Важно:** старый VQA v2-контур (`baseline_vqa.yaml`, `VQADataset`, `VQALoss`, `VQAAccuracy`)
+сохранён в репозитории, но **не является воспроизведением статьи**. Он помечен как устаревший контур.
 
 ---
 
 ## Текущее состояние
 
+### Компоненты, согласованные со статьёй (VCR + GQA)
+
 | Компонент | Статус | Примечание |
 |---|---|---|
-| `VQAGNNModel` | реализован | dense GAT, без `torch_geometric` |
-| `VQADataset` | реализован | требует заранее подготовленных артефактов |
-| `VQADemoDataset` | реализован | только smoke-test, не эксперимент статьи |
-| `VQALoss` | реализован | soft BCE, стандарт VQA v2 |
-| `VQAAccuracy` | реализована | официальная метрика VQA v2 |
-| `prepare_answer_vocab.py` | реализован | строит словарь ответов из аннотаций |
-| `prepare_visual_features.py` | реализован | конвертирует признаки в HDF5 |
-| `prepare_kg_graphs.py` | реализован | строит KG-подграфы из ConceptNet |
-| `validate_data.py` | реализован | проверяет артефакты перед запуском |
-| Обучение через `train.py` | работает | проверено на demo-датасете |
-| Инференс через `inference.py` | работает | проверено на demo-датасете |
-| Логирование в CometML | подключено | основной трекер |
-| Сохранение чекпойнтов | работает | существующая инфраструктура шаблона |
+| `VQAGNNModel` | реализован | dense GAT; для VCR используется `num_answers=1` (конфиг `vqa_gnn_vcr.yaml`) |
+| `VCRDataset` / `VCRDemoDataset` | реализован | требует VCR JSONL + HDF5 артефактов |
+| `GQADataset` / `GQADemoDataset` | реализован | требует GQA JSON + HDF5 артефактов |
+| `VCRLoss` | реализован | CE над 4 кандидатами |
+| `GQALoss` | реализован | CE с единственным GT ответом |
+| `VCRQAAccuracy` | реализована | точность Q→A |
+| `VCRQARAccuracy` | реализована | точность QA→R |
+| `GQAAccuracy` | реализована | точность по точному совпадению |
+| `prepare_vcr_data.py` | реализован | извлечение вопросов из JSONL + KG графы |
+| `prepare_gqa_data.py` | реализован | словарь ответов + KG графы |
+| VCR/GQA смоук-тест (demo) | работает | проверяет пайплайн без реальных данных |
+| Численные результаты статьи | **не подтверждены** | требуется реальный end-to-end запуск |
 
-## Что ещё ограничивает честное воспроизведение результатов статьи
+### Устаревший контур VQA v2 (не является воспроизведением статьи)
 
-- Точные веса детектора объектов из статьи не опубликованы.
-- Точный pipeline построения KG-подграфов в статье не описан полностью.
-- В тексте статьи явно указан pretrained RoBERTa для QA-context, но точный
-  Hugging Face checkpoint в статье не зафиксирован; в этом репозитории
-  для paper-aligned запуска по умолчанию принят `roberta-large`.
-- Численные результаты статьи не подтверждены реальным end-to-end запуском.
-- Формат и нормализация визуальных признаков принимаются по соглашению, а не из
-  официального pipeline статьи.
+| Компонент | Статус | Примечание |
+|---|---|---|
+| `VQADataset` / `VQADemoDataset` | реализован | VQA v2 формат, не датасет статьи |
+| `VQALoss` | реализован | soft BCE — не используется в статье |
+| `VQAAccuracy` | реализована | VQA v2 метрика — не используется в статье |
+| `prepare_answer_vocab.py` | реализован | для VQA v2 |
+| `validate_data.py` | реализован | для VQA v2 |
+
+---
+
+## Что ограничивает честное воспроизведение числовых результатов статьи
+
+- Точные веса детектора объектов из статьи не опубликованы (визуальные признаки — приближение).
+- Точный пайплайн построения KG-подграфов не описан полностью; здесь используется
+  ConceptNet Numberbatch с простым извлечением сущностей.
+- Точный HuggingFace-чекпойнт не зафиксирован в статье; здесь принят `roberta-large`.
+- Числовые результаты статьи не подтверждены реальным end-to-end запуском.
+- VCR: grounding ссылок на объекты (ссылки типа `[0, 2]` → "person car") реализован
+  как замена категорией объекта, а не полноценным region-level grounding.
 
 ## Основные отличия от статьи
 
 | Аспект | В статье | В этой реализации |
 |---|---|---|
-| Языковой энкодер | pretrained RoBERTa | `roberta-large` по умолчанию; меняется через конфиг |
-| Реализация GNN | недоступна публично | dense GAT (математически эквивалент) |
-| Построение KG | on-the-fly из внешнего KG | оффлайн, заранее подготовленные HDF5 |
-| KG-граф | custom pipeline | ConceptNet 5.7 + Numberbatch; структура приближённая |
-| Визуальные признаки | paper-specific detector | ожидаются готовые bottom-up features |
+| **Бенчмарки** | VCR + GQA | VCR + GQA (согласовано со статьёй); VQA v2 — устаревший контур |
+| Языковой энкодер | предобученная RoBERTa | `roberta-large` по умолчанию |
+| Реализация GNN | недоступна публично | dense GAT (функционально эквивалентен) |
+| Построение KG | on-the-fly из внешнего KG | офлайн, заранее подготовленные HDF5 |
+| KG-граф | специальный пайплайн статьи | ConceptNet 5.7 + Numberbatch; структура приближённая |
+| Визуальные признаки | детектор, специфичный для статьи | ожидаются готовые bottom-up features |
+| VCR object references | region-level grounding | замена категорией объекта (приближение) |
 | Числа из статьи | заявлены | не подтверждены в этом репозитории |
 
 ---
@@ -68,9 +98,173 @@ pip install -r requirements.txt
 
 ---
 
-## Подготовка данных
+## Быстрый старт: смоук-тест (без реальных данных)
 
-Для реального эксперимента нужны четыре группы артефактов.
+```bash
+# VCR Q→A смоук-тест (синтетические данные):
+python train.py --config-name baseline_vcr_qa
+
+# VCR QA→R смоук-тест:
+python train.py --config-name baseline_vcr_qar
+
+# GQA смоук-тест:
+python train.py --config-name baseline_gqa
+```
+
+Все три команды проверяют полный пайплайн на синтетических данных.
+Результаты **не воспроизводят статью** — только убеждаются, что код запускается.
+
+---
+
+## Запуск обучения, согласованного со статьёй (VCR + GQA)
+
+### VCR Q→A
+
+```bash
+python train.py --config-name baseline_vcr_qa \
+  datasets=vcr_qa \
+  datasets.train.data_dir=data/vcr \
+  datasets.val.data_dir=data/vcr
+```
+
+### VCR QA→R (отдельная модель)
+
+```bash
+python train.py --config-name baseline_vcr_qar \
+  datasets=vcr_qar \
+  datasets.train.data_dir=data/vcr \
+  datasets.val.data_dir=data/vcr
+```
+
+**Точность Q→AR** вычисляется как совместная точность двух отдельных моделей
+(Q→A и QA→R). Требует сохранить предсказания обоих запусков и объединить их.
+
+### GQA
+
+```bash
+python train.py --config-name baseline_gqa \
+  datasets=gqa \
+  datasets.train.data_dir=data/gqa \
+  datasets.train.answer_vocab_path=data/gqa/gqa_answer_vocab.json \
+  datasets.val.data_dir=data/gqa \
+  datasets.val.answer_vocab_path=data/gqa/gqa_answer_vocab.json
+```
+
+---
+
+## Подготовка данных (контур, согласованный со статьёй: VCR и GQA)
+
+### VCR
+
+**Получение данных VCR** (требует согласия с лицензией):
+- Скачайте аннотации с https://visualcommonsense.com
+  (файлы: `train.jsonl`, `val.jsonl`, `test.jsonl`)
+- Скачайте визуальные признаки (R2C Faster RCNN features, 2048-dim)
+  из официального релиза VCR
+
+Положите в `data/vcr/`:
+```text
+data/vcr/
+├── train.jsonl
+├── val.jsonl
+├── test.jsonl
+├── visual_features/
+│   ├── train_features.h5   # HDF5: img_fn → float32[N_v, 2048]
+│   └── val_features.h5
+└── knowledge_graphs/       # создаётся скриптом ниже
+    ├── train_graphs.h5
+    └── val_graphs.h5
+```
+
+**Построение KG-подграфов для VCR:**
+
+```bash
+# Train split:
+python scripts/prepare_vcr_data.py \
+  --jsonl data/vcr/train.jsonl \
+  --numberbatch data/conceptnet/numberbatch-en-19.08.txt.gz \
+  --output data/vcr/knowledge_graphs/train_graphs.h5 \
+  --d-kg 300
+
+# Val split:
+python scripts/prepare_vcr_data.py \
+  --jsonl data/vcr/val.jsonl \
+  --numberbatch data/conceptnet/numberbatch-en-19.08.txt.gz \
+  --output data/vcr/knowledge_graphs/val_graphs.h5 \
+  --d-kg 300
+
+# Проверить покрытие визуальных признаков:
+python scripts/prepare_vcr_data.py \
+  --jsonl data/vcr/val.jsonl \
+  --validate-visual data/vcr/visual_features/val_features.h5
+```
+
+### GQA
+
+**Получение данных GQA** (требует согласия с лицензией):
+- Скачайте balanced split questions с https://cs.stanford.edu/people/dorarad/gqa/download.html
+  (файлы: `train_balanced_questions.json`, `val_balanced_questions.json`)
+- Скачайте визуальные признаки (Visual Genome based)
+
+Положите в `data/gqa/`:
+```text
+data/gqa/
+├── questions/
+│   ├── train_balanced_questions.json
+│   └── val_balanced_questions.json
+├── visual_features/
+│   ├── train_features.h5   # HDF5: imageId → float32[N_v, 2048]
+│   └── val_features.h5
+├── knowledge_graphs/       # создаётся скриптом ниже
+│   ├── train_graphs.h5
+│   └── val_graphs.h5
+└── gqa_answer_vocab.json   # создаётся скриптом ниже
+```
+
+**Построение артефактов GQA:**
+
+```bash
+# Шаг 1: Построить словарь ответов (top-1852 из train):
+python scripts/prepare_gqa_data.py \
+  --build-vocab \
+  --questions data/gqa/questions/train_balanced_questions.json \
+  --output-vocab data/gqa/gqa_answer_vocab.json \
+  --top-n 1852
+
+# Шаг 2: KG-подграфы (train):
+python scripts/prepare_gqa_data.py \
+  --build-graphs \
+  --questions data/gqa/questions/train_balanced_questions.json \
+  --numberbatch data/conceptnet/numberbatch-en-19.08.txt.gz \
+  --output data/gqa/knowledge_graphs/train_graphs.h5 \
+  --d-kg 300
+
+# Шаг 3: KG-подграфы (val):
+python scripts/prepare_gqa_data.py \
+  --build-graphs \
+  --questions data/gqa/questions/val_balanced_questions.json \
+  --numberbatch data/conceptnet/numberbatch-en-19.08.txt.gz \
+  --output data/gqa/knowledge_graphs/val_graphs.h5 \
+  --d-kg 300
+```
+
+### ConceptNet Numberbatch (нужен для VCR и GQA)
+
+```bash
+mkdir -p data/conceptnet
+wget -P data/conceptnet \
+  https://conceptnet.s3.amazonaws.com/downloads/2019/numberbatch/numberbatch-en-19.08.txt.gz
+
+# Опционально, для лучшей структуры рёбер:
+wget -P data/conceptnet \
+  https://s3.amazonaws.com/conceptnet/downloads/2019/edges/conceptnet-assertions-5.7.0.csv.gz
+```
+
+---
+
+## Подготовка данных (устаревший контур: VQA v2)
+
+Для VQA v2 нужны четыре группы артефактов.
 Все скрипты подготовки лежат в `scripts/`.
 
 ### Ожидаемая структура каталогов
@@ -166,7 +360,7 @@ python scripts/prepare_visual_features.py \
 - `src/configs/model/vqa_gnn.yaml` → `d_visual`
 - `src/configs/datasets/vqa.yaml` → `d_visual`, `num_visual_nodes`
 
-### Шаг 3: Knowledge graph подграфы
+### Шаг 3: Подграфы графа знаний
 
 Это наиболее трудоёмкий шаг и главное ограничение текущей реализации.
 
@@ -234,7 +428,7 @@ python scripts/prepare_kg_graphs.py \
     --d-kg 100
 ```
 
-#### KG subgraph schema
+#### Схема KG-подграфа
 
 HDF5 ключ: `str(question_id)`
 
@@ -281,7 +475,7 @@ python scripts/validate_data.py \
 Скрипт проверит:
 - существование всех обязательных файлов
 - формат answer_vocab.json
-- покрытие image_id в visual features HDF5
+- покрытие `image_id` в HDF5 с визуальными признаками
 - покрытие question_id в KG graphs HDF5
 - shape, dtype, структуру групп
 
@@ -291,9 +485,9 @@ python scripts/validate_data.py \
 
 ## Запуск обучения
 
-### Demo smoke-test (без реальных данных)
+### Demo смоук-тест (без реальных данных)
 
-Проверяет, что полный pipeline обучения работает на синтетических данных.
+Проверяет, что полный пайплайн обучения работает на синтетических данных.
 Не воспроизводит результаты статьи.
 
 ```bash
@@ -318,7 +512,7 @@ python train.py --config-name baseline_vqa \
     model.d_kg=300
 ```
 
-### Полезные overrides
+### Полезные переопределения
 
 Для `roberta-large` на Kaggle почти всегда стоит отдельно подбирать
 `dataloader.batch_size`. Практически безопасная отправная точка:
@@ -329,7 +523,7 @@ python train.py --config-name baseline_vqa \
 ```
 
 ```bash
-# Заморозить text encoder (быстрее, меньше GPU памяти):
+# Заморозить text encoder (быстрее, меньше памяти GPU):
 python train.py --config-name baseline_vqa model.freeze_text_encoder=True
 
 # Вернуться к более лёгкому энкодеру, если не хватает памяти:
@@ -349,7 +543,7 @@ python train.py --config-name baseline_vqa \
 
 ## Запуск инференса
 
-### Demo smoke-test инференса
+### Demo смоук-тест инференса
 
 ```bash
 python inference.py --config-name inference_vqa \
@@ -383,7 +577,7 @@ data/saved/vqa_preds/val/output_*.pth
 или лицензионных ограничений, нужно подготовить заранее и загрузить как Kaggle Dataset:
 
 1. Данные VQA v2 (questions + annotations)
-2. Visual features HDF5
+2. HDF5 с визуальными признаками
 3. KG graphs HDF5
 4. answer_vocab.json
 5. HuggingFace кэш модели (если интернет отключён)
@@ -408,9 +602,9 @@ data/saved/vqa_preds/val/output_*.pth
 └── answer_vocab.json
 ```
 
-### Demo smoke-test на Kaggle
+### Demo смоук-тест на Kaggle
 
-> **Внимание:** demo smoke-test использует `VQAGNNModel` с `roberta-large` (≈355M
+> **Внимание:** demo смоук-тест использует `VQAGNNModel` с `roberta-large` (≈355M
 > параметров). При первом запуске Hugging Face скачает `roberta-large` (~1.4 GB).
 > Если интернет на Kaggle **отключён**, сначала загрузите `roberta-large` в Kaggle
 > Dataset и используйте команду из раздела
@@ -459,7 +653,7 @@ python inference.py --config-name inference_vqa \
 /kaggle/working/paper_model_replication/data/saved/vqa_preds/val/
 ```
 
-### Kaggle без интернета (offline RoBERTa / HF encoder)
+### Kaggle без интернета (офлайн RoBERTa / HF-энкодер)
 
 ```bash
 # Один раз (при включённом интернете):
@@ -518,7 +712,7 @@ python train.py --config-name baseline_vqa \
 comet upload ~/.cometml-runs/<experiment_key>
 ```
 
-### Полезные overrides
+### Полезные переопределения
 
 ```bash
 python train.py --config-name baseline_vqa \
@@ -553,49 +747,70 @@ saved/<run_name>/
 
 ```text
 .
-├── train.py                          # точка входа обучения
-├── inference.py                      # точка входа инференса
+├── train.py                               # точка входа обучения
+├── inference.py                           # точка входа инференса
+├── GAP_ANALYSIS.md                        # анализ расхождений с бумагой
 ├── requirements.txt
 ├── README.md
 ├── scripts/
-│   ├── prepare_answer_vocab.py       # шаг 1: словарь ответов
-│   ├── prepare_visual_features.py    # шаг 2: конвертация признаков в HDF5
-│   ├── prepare_kg_graphs.py          # шаг 3: KG подграфы из ConceptNet
-│   └── validate_data.py              # шаг 4: проверка артефактов
+│   ├── prepare_vcr_data.py                # [PAPER] VCR KG графы из JSONL
+│   ├── prepare_gqa_data.py                # [PAPER] GQA словарь ответов + KG графы
+│   ├── prepare_answer_vocab.py            # [устаревший VQA v2] словарь ответов
+│   ├── prepare_visual_features.py         # конвертация признаков в HDF5
+│   ├── prepare_kg_graphs.py               # KG подграфы из ConceptNet
+│   └── validate_data.py                   # проверка артефактов VQA v2
 └── src/
     ├── model/
-    │   └── vqa_gnn.py                # VQAGNNModel
+    │   └── vqa_gnn.py                     # VQAGNNModel (VCR + GQA + VQA v2)
     ├── datasets/
-    │   ├── vqa_dataset.py            # VQADataset, VQADemoDataset
-    │   └── vqa_collate.py            # vqa_collate_fn
+    │   ├── vcr_dataset.py                 # [PAPER] VCRDataset, VCRDemoDataset
+    │   ├── vcr_collate.py                 # [PAPER] make_vcr_collate_fn (B→B×4)
+    │   ├── gqa_dataset.py                 # [PAPER] GQADataset, GQADemoDataset
+    │   ├── gqa_collate.py                 # [PAPER] gqa_collate_fn
+    │   ├── vqa_dataset.py                 # [legacy] VQADataset, VQADemoDataset
+    │   └── vqa_collate.py                 # [legacy] vqa_collate_fn
     ├── loss/
-    │   └── vqa_loss.py               # VQALoss
+    │   ├── vcr_loss.py                    # [PAPER] VCRLoss (CE over 4 candidates)
+    │   ├── gqa_loss.py                    # [PAPER] GQALoss (hard CE)
+    │   └── vqa_loss.py                    # [legacy] VQALoss (soft BCE)
     ├── metrics/
-    │   └── vqa_metric.py             # VQAAccuracy
+    │   ├── vcr_metric.py                  # [PAPER] VCRQAAccuracy, VCRQARAccuracy
+    │   ├── gqa_metric.py                  # [PAPER] GQAAccuracy (точное совпадение)
+    │   └── vqa_metric.py                  # [legacy] VQAAccuracy (VQA v2 soft)
     └── configs/
-        ├── baseline_vqa.yaml         # training entry point
-        ├── inference_vqa.yaml        # inference entry point
-        ├── model/vqa_gnn.yaml
-        ├── datasets/{vqa,vqa_eval,vqa_demo,vqa_demo_eval}.yaml
-        ├── metrics/vqa.yaml
-        ├── transforms/vqa.yaml
-        └── dataloader/vqa.yaml
+        ├── baseline_vcr_qa.yaml           # [PAPER] VCR Q→A training
+        ├── baseline_vcr_qar.yaml          # [PAPER] VCR QA→R training
+        ├── baseline_gqa.yaml              # [PAPER] GQA training
+        ├── inference_vcr.yaml             # [PAPER] VCR inference
+        ├── inference_gqa.yaml             # [PAPER] GQA inference
+        ├── baseline_vqa.yaml              # [legacy] VQA v2 training
+        ├── inference_vqa.yaml             # [legacy] VQA v2 inference
+        ├── model/
+        │   ├── vqa_gnn_vcr.yaml           # [PAPER] num_answers=1 for VCR
+        │   ├── vqa_gnn_gqa.yaml           # [PAPER] num_answers=1852 for GQA
+        │   └── vqa_gnn.yaml               # [legacy] num_answers=3129 for VQA v2
+        ├── datasets/
+        │   ├── {vcr_qa,vcr_qar,vcr_demo,vcr_demo_qar}.yaml
+        │   ├── {gqa,gqa_eval,gqa_demo}.yaml
+        │   └── {vqa,vqa_eval,vqa_demo,vqa_demo_eval}.yaml
+        ├── metrics/{vcr_qa,vcr_qar,gqa,vqa}.yaml
+        ├── dataloader/{vcr,gqa,vqa}.yaml
+        └── transforms/vqa.yaml
 ```
 
 ---
 
 ## Что стоит сделать перед попыткой честно повторить числа из статьи
 
-1. Обеспечить использование того же детектора объектов, что и в статье
-   (текущее состояние: любые совместимые bottom-up features).
-2. Зафиксировать paper-aligned text encoder `roberta-large` и не смешивать его
-   с результатами, полученными на более лёгких бэкбонах.
-3. Провести полный train/val эксперимент на VQA v2 с правильными артефактами.
-4. Сравнить метрики и задокументировать расхождения явно.
+1. Обеспечить использование тех же визуальных признаков, что и в статье
+   (R2C Faster RCNN для VCR, VG-совместимые признаки для GQA).
+2. Зафиксировать text encoder `roberta-large`, согласованный со статьёй.
+3. Провести полный train/val эксперимент на VCR и GQA с правильными артефактами.
+4. Сравнить метрики и задокументировать расхождения в [GAP_ANALYSIS.md](GAP_ANALYSIS.md).
 
 ---
 
-## Citation
+## Цитирование
 
 ```bibtex
 @inproceedings{vqagnn2023,

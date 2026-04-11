@@ -1,2 +1,3 @@
-from src.transforms.normalize import Normalize1D
-from src.transforms.scale import RandomScale1D
+# VQA-GNN does not use custom transforms.
+# Visual and graph features are pre-extracted and require no runtime augmentation.
+# Legacy transforms (Normalize1D, RandomScale1D) are in legacy/transforms/.

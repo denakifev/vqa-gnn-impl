@@ -1,0 +1,35 @@
+# VCR QA→R dataset configuration for VQA-GNN training.
+#
+# task_mode: 'qar' — context node encodes [question; correct_answer; candidate_rationale_j]
+#
+# NOTE: In QA→R training, the correct_answer used for the context is the
+# ground-truth answer (answer_label). At inference time for Q→AR evaluation,
+# the predicted answer from a trained Q→A model should be used instead.
+# This implementation uses GT answer for training (standard VCR protocol).
+
+train:
+  _target_: src.datasets.VCRDataset
+  partition: "train"
+  data_dir: "data/vcr"
+  task_mode: "qar"
+  max_context_len: 64
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  d_kg: 300
+  text_encoder_name: "roberta-large"
+  instance_transforms: ${transforms.instance_transforms.train}
+  shuffle_index: True
+
+val:
+  _target_: src.datasets.VCRDataset
+  partition: "val"
+  data_dir: "data/vcr"
+  task_mode: "qar"
+  max_context_len: 64
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  d_kg: 300
+  text_encoder_name: "roberta-large"
+  instance_transforms: ${transforms.instance_transforms.inference}

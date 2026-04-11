@@ -1,0 +1,13 @@
+# Metrics for GQA training and evaluation.
+# GQA accuracy: exact-match accuracy (predicted answer == GT answer).
+# Differs from VQA v2 accuracy (which uses soft labels).
+
+device: "auto"
+
+train:
+  - _target_: src.metrics.GQAAccuracy
+    name: "GQA_Accuracy"
+
+inference:
+  - _target_: src.metrics.GQAAccuracy
+    name: "GQA_Accuracy"
