@@ -6,10 +6,11 @@ from hydra.utils import instantiate
 
 from src.datasets.data_utils import get_dataloaders
 from src.trainer import Inferencer
-from src.utils.init_utils import set_random_seed
+from src.utils.init_utils import patch_hydra_argparse_compat, set_random_seed
 from src.utils.io_utils import ROOT_PATH
 
 warnings.filterwarnings("ignore", category=UserWarning)
+patch_hydra_argparse_compat()
 
 
 @hydra.main(version_base=None, config_path="src/configs", config_name="inference")

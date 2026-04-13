@@ -24,7 +24,7 @@ class GQALoss(nn.Module):
     """
     Hard cross-entropy loss for GQA open-ended QA.
 
-    GQA uses a fixed answer vocabulary (default ~1852 answers for the balanced split).
+    GQA uses a fixed answer vocabulary (default 1842 answers for the paper-aligned setup).
     Each question has exactly one correct answer.
 
     Batch keys consumed:

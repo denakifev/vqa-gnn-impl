@@ -2,7 +2,7 @@
 Collate function for GQA batches (VQA-GNN, arXiv:2205.11501).
 
 GQA is an open-ended question answering task with a fixed answer vocabulary
-(~1852 answers in the balanced split). Each item has a single ground-truth
+(paper target: 1842 answers). Each item has a single ground-truth
 answer label (no soft annotations).
 
 This collate is structurally simpler than VCR: no candidate expansion,
@@ -30,6 +30,7 @@ def gqa_collate_fn(dataset_items: list) -> dict:
         "question_attention_mask",
         "graph_node_features",
         "graph_adj",
+        "graph_edge_types",
         "graph_node_types",
         "labels",
     ]

@@ -2,7 +2,7 @@
 # This is a PAPER-ALIGNED config. See GAP_ANALYSIS.md for deviations.
 #
 # GQA: open-ended VQA on Visual Genome images with compositional questions.
-# Answer space: ~1852 answers (GQA balanced split).
+# Answer space: 1842 classes (paper target for GQA).
 # Metric: exact-match accuracy.
 #
 # Default: DEMO mode (synthetic data, no real GQA data needed).
@@ -66,6 +66,7 @@ trainer:
     - "question_attention_mask"
     - "graph_node_features"
     - "graph_adj"
+    - "graph_edge_types"
     - "graph_node_types"
     - "labels"
   resume_from: null

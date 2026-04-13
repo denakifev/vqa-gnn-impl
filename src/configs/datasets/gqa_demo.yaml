@@ -4,21 +4,21 @@
 train:
   _target_: src.datasets.GQADemoDataset
   num_samples: 64
-  num_answers: 1852
+  num_answers: 1842
   max_question_len: 30
-  num_visual_nodes: 36
-  max_kg_nodes: 30
+  num_visual_nodes: 100
+  max_kg_nodes: 100
   d_visual: 2048
-  d_kg: 300  # must match vqa_gnn_gqa.yaml d_kg
+  d_kg: 600  # must match vqa_gnn_gqa.yaml d_kg
   seed: 42
 
 val:
   _target_: src.datasets.GQADemoDataset
   num_samples: 32
-  num_answers: 1852
+  num_answers: 1842
   max_question_len: 30
-  num_visual_nodes: 36
-  max_kg_nodes: 30
+  num_visual_nodes: 100
+  max_kg_nodes: 100
   d_visual: 2048
-  d_kg: 300  # must match vqa_gnn_gqa.yaml d_kg
+  d_kg: 600  # must match vqa_gnn_gqa.yaml d_kg
   seed: 0

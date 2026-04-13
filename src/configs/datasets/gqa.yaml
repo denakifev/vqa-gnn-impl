@@ -8,9 +8,11 @@
 #   ${answer_vocab_path}   # {"answer_to_idx": {"yes": 0, ...}}
 #
 # Prepare data with:
-#   python scripts/prepare_gqa_data.py --build-vocab
-#   python scripts/prepare_gqa_data.py --build-graphs
-#   python scripts/prepare_visual_features.py (reuse from VQA pipeline)
+#   python scripts/prepare_gqa_data.py prepare-all ...
+# or lower-level commands:
+#   python scripts/prepare_gqa_data.py answer-vocab ...
+#   python scripts/prepare_gqa_data.py knowledge-graphs ...
+#   python scripts/prepare_gqa_data.py visual-features ...
 
 train:
   _target_: src.datasets.GQADataset
@@ -18,11 +20,11 @@ train:
   data_dir: "data/gqa"
   answer_vocab_path: "data/gqa/gqa_answer_vocab.json"
   max_question_len: 30
-  num_visual_nodes: 36
-  max_kg_nodes: 30
+  num_visual_nodes: 100
+  max_kg_nodes: 100
   d_visual: 2048
   # d_kg must match: src/configs/model/vqa_gnn_gqa.yaml (d_kg)
-  d_kg: 300
+  d_kg: 600
   text_encoder_name: "roberta-large"
   instance_transforms: ${transforms.instance_transforms.train}
   shuffle_index: True
@@ -33,9 +35,9 @@ val:
   data_dir: "data/gqa"
   answer_vocab_path: "data/gqa/gqa_answer_vocab.json"
   max_question_len: 30
-  num_visual_nodes: 36
-  max_kg_nodes: 30
+  num_visual_nodes: 100
+  max_kg_nodes: 100
   d_visual: 2048
-  d_kg: 300
+  d_kg: 600
   text_encoder_name: "roberta-large"
   instance_transforms: ${transforms.instance_transforms.inference}

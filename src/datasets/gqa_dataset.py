@@ -6,7 +6,7 @@ Two classes are provided:
 GQADataset
     Reads real GQA balanced-split data (JSON files from cs.stanford.edu/people/dorarad/gqa).
     Requires pre-extracted visual features (HDF5, keyed by imageId),
-    a pre-built answer vocabulary JSON, and pre-built per-question KG subgraph
+    a pre-built answer vocabulary JSON, and pre-built per-question scene-graph
     files (HDF5, keyed by question_id).
     See README.md → "Data preparation (GQA)" for required directory layout.
 
@@ -20,8 +20,9 @@ Batch contract (keys returned by __getitem__ for both classes):
     visual_features         FloatTensor[N_v, d_visual]    region features
     question_input_ids      LongTensor[L]                 tokenized question
     question_attention_mask LongTensor[L]                 text encoder mask
-    graph_node_features     FloatTensor[N_kg, d_kg]       KG node features
+    graph_node_features     FloatTensor[N_kg, d_kg]       textual SG node features
     graph_adj               FloatTensor[N_total, N_total] adjacency matrix
+    graph_edge_types        LongTensor[N_total, N_total]  relation ids
     graph_node_types        LongTensor[N_total]           0=visual,1=q,2=kg
     labels                  LongTensor[]                  GT answer index
     question_id             str                           GQA question ID
@@ -30,14 +31,15 @@ Where N_total = N_v + 1 + N_kg.
 
 GQA differences from VQA v2:
     - Single ground-truth answer per question (no soft labels from multiple annotators).
-    - Answer vocabulary size ~1852 (GQA balanced split), not 3129 (VQA v2).
+    - Paper target answer vocabulary size: 1842 classes, not 3129 (VQA v2).
     - Images from Visual Genome (same dataset as VCR).
     - Annotation JSON format: {q_id: {question, imageId, answer, ...}}.
 
 Deviation from paper:
-    - KG subgraphs are pre-built offline (paper queries ConceptNet at runtime).
-    - Visual features assumed to be bottom-up style (paper uses GQA's own features).
-    - Exact answer vocabulary mapping follows a top-N frequency count on train set.
+    - Scene-graph tensors are pre-built offline rather than on-the-fly.
+    - Graph edges are stored as dense adjacency / relation-id matrices.
+    - The fixed answer space is inferred from the released balanced splits rather
+      than copied from an official paper artifact.
 """
 
 import json
@@ -49,6 +51,8 @@ from typing import Optional
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+
+from src.datasets.gqa_preprocessing import normalize_answer
 
 logger = logging.getLogger(__name__)
 
@@ -92,22 +96,24 @@ class GQADataset(Dataset):
         │   └── val_features.h5
         └── knowledge_graphs/
             ├── train_graphs.h5                  # HDF5: question_id (str) →
-            │                                    #   {node_features, adj_matrix, node_types}
+            │                                    #   {node_features, adj_matrix, graph_edge_types, node_types}
             └── val_graphs.h5
 
-    answer_vocab_path points to a JSON file:
-        { "answer_to_idx": {"yes": 0, "no": 1, ...} }
-    Build it with: python scripts/prepare_gqa_data.py --build-vocab ...
+        answer_vocab_path points to a JSON file:
+        {
+          "answer_to_idx": {"yes": 0, "no": 1, ...},
+          "idx_to_answer": ["yes", "no", ...],
+          "metadata": {...}
+        }
+    Build it with: python scripts/prepare_gqa_data.py answer-vocab ...
 
     GQA annotation format:
         Each question JSON file is a dict: {question_id: {question, imageId, answer, ...}}
 
-    Deviation from paper:
-        KG subgraphs are pre-built offline rather than queried at runtime.
-        Visual features are expected as pre-extracted bottom-up style features.
-        GQA's own features (and detectors) are not used here — this is a
-        documented approximation; the exact visual feature source should match
-        across VCR and GQA for a paper-aligned joint experiment.
+        Deviation from paper:
+        Scene-graph tensors are pre-built offline rather than built on-the-fly.
+        Visual features are expected in the official GQA object-feature layout
+        repackaged into runtime HDF5 files keyed by imageId.
     """
 
     def __init__(
@@ -116,14 +122,15 @@ class GQADataset(Dataset):
         data_dir: str,
         answer_vocab_path: str,
         max_question_len: int = 30,
-        num_visual_nodes: int = 36,
-        max_kg_nodes: int = 30,
+        num_visual_nodes: int = 100,
+        max_kg_nodes: int = 100,
         d_visual: int = 2048,
-        d_kg: int = 300,
+        d_kg: int = 600,
         text_encoder_name: str = "roberta-large",
         instance_transforms=None,
         limit: Optional[int] = None,
         shuffle_index: bool = False,
+        strict_answer_vocab: bool = True,
     ):
         """
         Args:
@@ -139,6 +146,8 @@ class GQADataset(Dataset):
             instance_transforms: unused; kept for API compatibility.
             limit (int|None): if set, use only first `limit` samples.
             shuffle_index (bool): shuffle samples before applying limit.
+            strict_answer_vocab (bool): fail if a labeled sample cannot be
+                mapped into the provided answer vocabulary.
         """
         self.partition = partition
         self.data_dir = Path(data_dir)
@@ -148,6 +157,7 @@ class GQADataset(Dataset):
         self.d_visual = d_visual
         self.d_kg = d_kg
         self.n_total = num_visual_nodes + 1 + max_kg_nodes
+        self.strict_answer_vocab = strict_answer_vocab
 
         # Load answer vocabulary
         vocab_path = Path(answer_vocab_path)
@@ -155,6 +165,7 @@ class GQADataset(Dataset):
         with open(vocab_path) as f:
             vocab_data = json.load(f)
         self.answer_to_idx: dict = vocab_data["answer_to_idx"]
+        self.idx_to_answer: list[str] = vocab_data.get("idx_to_answer", [])
         self.num_answers = len(self.answer_to_idx)
         logger.info(f"Loaded GQA answer vocabulary: {self.num_answers} answers.")
 
@@ -218,9 +229,20 @@ class GQADataset(Dataset):
             q_data = json.load(f)
 
         index = []
+        unknown_answers = []
         for q_id, item in q_data.items():
             answer = item.get("answer", None)
-            label = self.answer_to_idx.get(answer, -1) if answer else -1
+            normalized_answer = normalize_answer(answer) if answer else None
+            label = self.answer_to_idx.get(normalized_answer, -1) if normalized_answer else -1
+            if answer and label < 0 and self.partition != "test":
+                if len(unknown_answers) < 10:
+                    unknown_answers.append(
+                        {
+                            "question_id": str(q_id),
+                            "raw_answer": answer,
+                            "normalized_answer": normalized_answer,
+                        }
+                    )
             index.append(
                 {
                     "question_id": q_id,
@@ -231,6 +253,13 @@ class GQADataset(Dataset):
             )
             if limit is not None and len(index) >= limit:
                 break
+
+        if unknown_answers and self.strict_answer_vocab:
+            raise ValueError(
+                "Found labeled GQA samples whose answers are missing from the answer vocabulary. "
+                "Rebuild the vocab with the official balanced splits or inspect normalization. "
+                f"Examples: {unknown_answers}"
+            )
         return index
 
     def _open_h5(self):
@@ -244,6 +273,55 @@ class GQADataset(Dataset):
                 ) from e
             self._visual_h5 = h5py.File(self._visual_h5_path, "r")
             self._graph_h5 = h5py.File(self._graph_h5_path, "r")
+            self._validate_h5_metadata()
+
+    def _validate_h5_metadata(self) -> None:
+        """
+        Validate optional file-level attrs written by the new GQA pipeline.
+
+        Old artifacts without attrs remain loadable; new artifacts get stricter
+        consistency checks to catch data/config mismatches early.
+        """
+        visual_num_boxes = self._visual_h5.attrs.get("num_boxes")
+        visual_feature_dim = self._visual_h5.attrs.get("feature_dim")
+        if visual_num_boxes is not None and int(visual_num_boxes) != self.num_visual_nodes:
+            raise ValueError(
+                f"Visual HDF5 expects num_boxes={visual_num_boxes}, "
+                f"but dataset config requests num_visual_nodes={self.num_visual_nodes}."
+            )
+        if visual_feature_dim is not None and int(visual_feature_dim) != self.d_visual:
+            raise ValueError(
+                f"Visual HDF5 expects feature_dim={visual_feature_dim}, "
+                f"but dataset config requests d_visual={self.d_visual}."
+            )
+
+        graph_d_kg = self._graph_h5.attrs.get("d_kg")
+        graph_num_visual_nodes = self._graph_h5.attrs.get("num_visual_nodes")
+        graph_max_kg_nodes = self._graph_h5.attrs.get("max_kg_nodes")
+        if graph_d_kg is not None and int(graph_d_kg) != self.d_kg:
+            raise ValueError(
+                f"Graph HDF5 expects d_kg={graph_d_kg}, "
+                f"but dataset config requests d_kg={self.d_kg}."
+            )
+        if (
+            graph_num_visual_nodes is not None
+            and int(graph_num_visual_nodes) != self.num_visual_nodes
+        ):
+            raise ValueError(
+                f"Graph HDF5 expects num_visual_nodes={graph_num_visual_nodes}, "
+                f"but dataset config requests num_visual_nodes={self.num_visual_nodes}."
+            )
+        if graph_max_kg_nodes is not None and int(graph_max_kg_nodes) != self.max_kg_nodes:
+            raise ValueError(
+                f"Graph HDF5 expects max_kg_nodes={graph_max_kg_nodes}, "
+                f"but dataset config requests max_kg_nodes={self.max_kg_nodes}."
+            )
+
+        if self._graph_h5.attrs.get("fully_connected_fallback_used") is True:
+            logger.warning(
+                "KG HDF5 reports fully_connected_fallback_used=True. "
+                "This artifact predates the stricter paper-aligned GQA pipeline."
+            )
 
     def __len__(self) -> int:
         return len(self._index)
@@ -273,7 +351,14 @@ class GQADataset(Dataset):
         question_attention_mask = enc["attention_mask"].squeeze(0)
 
         # KG subgraph
-        graph_node_features, graph_adj, graph_node_types = self._load_graph(question_id)
+        graph_node_features, graph_adj, graph_edge_types, graph_node_types = self._load_graph(
+            question_id
+        )
+
+        if entry["label"] < 0 and self.partition != "test" and self.strict_answer_vocab:
+            raise ValueError(
+                f"Question {question_id} has no valid answer label in the current answer vocab."
+            )
 
         label = torch.tensor(max(entry["label"], 0), dtype=torch.long)
 
@@ -283,13 +368,14 @@ class GQADataset(Dataset):
             "question_attention_mask": question_attention_mask,
             "graph_node_features": graph_node_features,
             "graph_adj": graph_adj,
+            "graph_edge_types": graph_edge_types,
             "graph_node_types": graph_node_types,
             "labels": label,
             "question_id": question_id,
         }
 
     def _load_graph(self, question_id: str) -> tuple:
-        """Load pre-built KG subgraph for a given GQA question (same format as VQADataset)."""
+        """Load a pre-built GQA scene-graph sample for the given question."""
         grp = self._graph_h5[question_id]
 
         node_feats_raw = torch.tensor(grp["node_features"][()], dtype=torch.float32)
@@ -301,10 +387,15 @@ class GQADataset(Dataset):
         graph_node_features[:n_kg_actual] = node_feats_raw
 
         graph_adj = torch.tensor(grp["adj_matrix"][()], dtype=torch.float32)
+        if "graph_edge_types" in grp:
+            graph_edge_types = torch.tensor(grp["graph_edge_types"][()], dtype=torch.long)
+        else:
+            graph_edge_types = torch.zeros_like(graph_adj, dtype=torch.long)
         graph_node_types = torch.tensor(grp["node_types"][()], dtype=torch.long)
 
         n_total_expected = self.num_visual_nodes + 1 + self.max_kg_nodes
         graph_adj = _pad_or_trim_2d(graph_adj, n_total_expected)
+        graph_edge_types = _pad_or_trim_2d(graph_edge_types, n_total_expected)
 
         cur_nt_len = graph_node_types.shape[0]
         if cur_nt_len > n_total_expected:
@@ -315,7 +406,7 @@ class GQADataset(Dataset):
                 [graph_node_types, torch.full((extra,), NODE_TYPE_KG, dtype=torch.long)]
             )
 
-        return graph_node_features, graph_adj, graph_node_types
+        return graph_node_features, graph_adj, graph_edge_types, graph_node_types
 
 
 # ---------------------------------------------------------------------------
@@ -334,12 +425,12 @@ class GQADemoDataset(Dataset):
     def __init__(
         self,
         num_samples: int = 64,
-        num_answers: int = 1852,
+        num_answers: int = 1842,
         max_question_len: int = 30,
-        num_visual_nodes: int = 36,
-        max_kg_nodes: int = 30,
+        num_visual_nodes: int = 100,
+        max_kg_nodes: int = 100,
         d_visual: int = 2048,
-        d_kg: int = 100,
+        d_kg: int = 600,
         seed: int = 42,
         instance_transforms=None,
         **kwargs,
@@ -347,7 +438,7 @@ class GQADemoDataset(Dataset):
         """
         Args:
             num_samples (int): number of synthetic samples.
-            num_answers (int): GQA answer vocabulary size (default 1852 balanced split).
+            num_answers (int): GQA answer vocabulary size (default 1842, paper target).
             max_question_len (int): question token sequence length.
             num_visual_nodes (int): number of visual region nodes.
             max_kg_nodes (int): number of KG nodes per sample.
@@ -386,6 +477,9 @@ class GQADemoDataset(Dataset):
         adj_np = (rng.random((n_total, n_total)) > 0.7).astype(np.float32)
         np.fill_diagonal(adj_np, 1.0)
         graph_adj = torch.tensor(adj_np)
+        edge_types_np = np.zeros((n_total, n_total), dtype=np.int64)
+        np.fill_diagonal(edge_types_np, 1)
+        graph_edge_types = torch.tensor(edge_types_np, dtype=torch.long)
         node_types = np.array(
             [NODE_TYPE_VISUAL] * self.num_visual_nodes
             + [NODE_TYPE_QUESTION]
@@ -401,6 +495,7 @@ class GQADemoDataset(Dataset):
             "question_attention_mask": question_attention_mask,
             "graph_node_features": graph_node_features,
             "graph_adj": graph_adj,
+            "graph_edge_types": graph_edge_types,
             "graph_node_types": graph_node_types,
             "labels": label,
             "question_id": str(idx),

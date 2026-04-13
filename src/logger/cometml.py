@@ -40,7 +40,8 @@ class CometMLWriter:
         try:
             import comet_ml
 
-            comet_ml.login()
+            if mode != "offline":
+                comet_ml.login()
 
             self.run_id = run_id
 

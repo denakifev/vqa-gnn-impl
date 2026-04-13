@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -m pytest tests/test_paper_path.py -q --tb=short)"
+    ]
+  }
+}

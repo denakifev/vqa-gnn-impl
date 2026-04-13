@@ -1,14 +1,14 @@
 """
-Convert pre-extracted visual region features to HDF5 format for VQADataset.
+Convert pre-extracted visual region features to runtime HDF5 format.
 
 Expected output format:
-    data/vqa/visual_features/{split}_features.h5
+    data/<task>/visual_features/{split}_features.h5
     Key:   image_id (string)
     Value: float32 array of shape [num_boxes, feature_dim]  (typically [36, 2048])
 
 This script does NOT extract features from images. It only converts
-already-extracted bottom-up attention features into the HDF5 format
-expected by VQADataset.
+already-extracted features into the HDF5 format expected by the runtime
+datasets (VCR / GQA).
 
 DEVIATION FROM PAPER:
     The paper uses a specific object detector and feature extractor whose
@@ -45,6 +45,11 @@ Supported input formats:
     --format h5     An existing HDF5 file. Re-keys entries to string image_ids.
                     Useful if you have features in a different HDF5 layout.
 
+    --format gqa_h5 Official GQA object-features release:
+                    - gqa_objects.h5 or gqa_objects_*.h5 shard directory
+                    - gqa_objects_info.json
+                    - optional questions JSON to filter to one split
+
 Usage:
     # From TSV (bottom-up attention official release):
     python scripts/prepare_visual_features.py \\
@@ -75,6 +80,7 @@ Usage:
 
 import argparse
 import base64
+import json
 import sys
 from pathlib import Path
 
@@ -335,12 +341,180 @@ def _verify_h5(h5_path: Path, num_fixed_boxes: int, feature_dim: int, sample_siz
     return True
 
 
+def _load_gqa_image_ids_from_questions(questions_json: Path) -> list[str]:
+    """
+    Load unique image IDs referenced by an official GQA questions JSON file.
+    """
+    questions_json = Path(questions_json)
+    if not questions_json.exists():
+        print(f"[ERROR] Questions JSON not found: {questions_json}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(questions_json) as f:
+        q_data = json.load(f)
+
+    if not isinstance(q_data, dict):
+        print(
+            f"[ERROR] Expected official GQA questions dict in {questions_json}, "
+            f"got {type(q_data).__name__}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    image_ids = sorted({str(item["imageId"]) for item in q_data.values() if "imageId" in item})
+    print(f"Loaded {len(image_ids)} unique image IDs from {questions_json}")
+    return image_ids
+
+
+def _read_gqa_objects_h5(
+    h5_path: Path,
+    info_json: Path,
+    num_fixed_boxes: int,
+    feature_dim: int,
+    questions_json: Path | None = None,
+):
+    """
+    Yield (image_id_str, features_np) from official GQA object features.
+
+    Expected files:
+      - gqa_objects.h5
+        or a directory containing gqa_objects_*.h5 shards
+      - gqa_objects_info.json   {imageId: {"file": int, "idx": int, "objectsNum": int, ...}}
+    """
+    h5_path = Path(h5_path)
+    info_json = Path(info_json)
+
+    if not h5_path.exists():
+        print(f"[ERROR] GQA object HDF5 input not found: {h5_path}", file=sys.stderr)
+        sys.exit(1)
+    if not info_json.exists():
+        print(f"[ERROR] GQA info JSON not found: {info_json}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(info_json) as f:
+        info = json.load(f)
+
+    if not isinstance(info, dict):
+        print(
+            f"[ERROR] Expected dict in {info_json}, got {type(info).__name__}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if questions_json is not None:
+        target_image_ids = _load_gqa_image_ids_from_questions(questions_json)
+    else:
+        target_image_ids = sorted(str(k) for k in info.keys())
+        print(f"Using all {len(target_image_ids)} image IDs from {info_json}")
+
+    shard_paths = {}
+    if h5_path.is_dir():
+        shard_paths = {
+            int(p.stem.rsplit("_", 1)[-1]): p
+            for p in sorted(h5_path.glob("gqa_objects_*.h5"))
+        }
+        if not shard_paths:
+            print(
+                f"[ERROR] No shard files matching gqa_objects_*.h5 found in {h5_path}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"Discovered {len(shard_paths)} GQA feature shards in {h5_path}")
+    elif h5_path.is_file():
+        shard_paths = {None: h5_path}
+    else:
+        print(f"[ERROR] Unsupported GQA feature input: {h5_path}", file=sys.stderr)
+        sys.exit(1)
+
+    open_files = {}
+
+    def _get_features_dataset(file_id):
+        file_key = None if None in shard_paths else file_id
+        if file_key not in shard_paths:
+            print(
+                f"[ERROR] Feature shard file id={file_id} not found under {h5_path}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if file_key not in open_files:
+            f = h5py.File(shard_paths[file_key], "r")
+            if "features" not in f:
+                print(
+                    f"[ERROR] Expected dataset 'features' in {shard_paths[file_key]}. "
+                    f"Found keys: {list(f.keys())[:10]}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            open_files[file_key] = f
+        return open_files[file_key]["features"]
+
+    missing_info = 0
+    try:
+        for image_id in tqdm(target_image_ids, desc="Reading GQA object features"):
+            meta = info.get(str(image_id))
+            if meta is None:
+                missing_info += 1
+                if missing_info <= 5:
+                    print(
+                        f"[WARNING] imageId={image_id} missing from {info_json}, skipping.",
+                        file=sys.stderr,
+                )
+                continue
+
+            file_id = meta.get("file")
+            idx = meta.get("idx")
+            if idx is None:
+                print(
+                    f"[WARNING] imageId={image_id} has no 'idx' in {info_json}, skipping.",
+                    file=sys.stderr,
+                )
+                continue
+
+            features_ds = _get_features_dataset(file_id)
+            feats = np.asarray(features_ds[idx], dtype=np.float32)
+            if feats.ndim != 2:
+                print(
+                    f"[WARNING] imageId={image_id} has unexpected feature shape "
+                    f"{feats.shape}, skipping.",
+                    file=sys.stderr,
+                )
+                continue
+
+            if feats.shape[1] != feature_dim:
+                print(
+                    f"[WARNING] imageId={image_id} feature_dim={feats.shape[1]} "
+                    f"(expected {feature_dim}). Using as-is.",
+                    file=sys.stderr,
+                )
+
+            objects_num = meta.get("objectsNum")
+            if isinstance(objects_num, int) and 0 < objects_num < feats.shape[0]:
+                feats = feats[:objects_num]
+
+            actual = feats.shape[0]
+            if actual > num_fixed_boxes:
+                feats = feats[:num_fixed_boxes]
+            elif actual < num_fixed_boxes:
+                pad = np.zeros((num_fixed_boxes - actual, feats.shape[1]), dtype=np.float32)
+                feats = np.concatenate([feats, pad], axis=0)
+
+            yield str(image_id), feats
+    finally:
+        for f in open_files.values():
+            f.close()
+
+
 # ---------------------------------------------------------------------------
 # Writer
 # ---------------------------------------------------------------------------
 
 
-def write_to_h5(generator, output_path: Path, compression: str = "gzip"):
+def write_to_h5(
+    generator,
+    output_path: Path,
+    compression: str = "gzip",
+    attrs: dict | None = None,
+):
     """
     Write (image_id, features) pairs from generator to HDF5.
 
@@ -348,11 +522,17 @@ def write_to_h5(generator, output_path: Path, compression: str = "gzip"):
         generator: iterable of (image_id_str, np.ndarray[float32]) pairs.
         output_path (Path): output .h5 file path.
         compression (str): HDF5 compression codec ('gzip', 'lzf', or None).
+        attrs (dict | None): optional file-level HDF5 attrs to write.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     n_written = 0
     with h5py.File(output_path, "w") as f:
+        if attrs:
+            for key, value in attrs.items():
+                if value is None:
+                    continue
+                f.attrs[key] = value
         for image_id, feats in generator:
             f.create_dataset(
                 str(image_id),
@@ -378,9 +558,9 @@ def main():
     )
     parser.add_argument(
         "--format",
-        choices=["tsv", "npy", "npz", "h5"],
+        choices=["tsv", "npy", "npz", "h5", "gqa_h5"],
         required=True,
-        help="Input format: tsv | npy | npz | h5",
+        help="Input format: tsv | npy | npz | h5 | gqa_h5",
     )
     parser.add_argument(
         "--input",
@@ -415,10 +595,32 @@ def main():
              "Common alternatives: 'fc6', 'x', 'feat'.",
     )
     parser.add_argument(
+        "--info-json",
+        default=None,
+        help=(
+            "Auxiliary metadata JSON for formats that need it. "
+            "For --format gqa_h5, pass gqa_objects_info.json."
+        ),
+    )
+    parser.add_argument(
+        "--questions-json",
+        default=None,
+        help=(
+            "Optional questions JSON used to filter image IDs for a split. "
+            "For --format gqa_h5, pass train_balanced_questions.json or "
+            "val_balanced_questions.json."
+        ),
+    )
+    parser.add_argument(
         "--compression",
         default="gzip",
         choices=["gzip", "lzf", "none"],
         help="HDF5 compression codec (default: gzip). Use 'none' to disable.",
+    )
+    parser.add_argument(
+        "--metadata-output",
+        default=None,
+        help="Optional JSON metadata output for the written HDF5 file.",
     )
     parser.add_argument(
         "--verify-only",
@@ -438,6 +640,12 @@ def main():
             sys.exit(1)
         _verify_h5(input_path, args.num_boxes, args.feature_dim)
         return
+
+    attrs = {
+        "source_format": args.format,
+        "num_boxes": args.num_boxes,
+        "feature_dim": args.feature_dim,
+    }
 
     if args.format == "tsv":
         gen = _read_tsv(input_path, args.num_boxes)
@@ -483,11 +691,33 @@ def main():
             gen = iter(entries)
         else:
             gen = _read_existing_h5(input_path, args.num_boxes, args.feature_dim)
+    elif args.format == "gqa_h5":
+        if not args.info_json:
+            print(
+                "[ERROR] --info-json is required with --format gqa_h5.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        gen = _read_gqa_objects_h5(
+            input_path,
+            Path(args.info_json),
+            args.num_boxes,
+            args.feature_dim,
+            Path(args.questions_json) if args.questions_json else None,
+        )
+        attrs.update(
+            {
+                "dataset_name": "gqa",
+                "source_format": "official_gqa_objects_h5",
+                "info_json": str(args.info_json),
+                "questions_json": str(args.questions_json) if args.questions_json else "",
+            }
+        )
     else:
         print(f"[ERROR] Unknown format: {args.format}", file=sys.stderr)
         sys.exit(1)
 
-    n = write_to_h5(gen, output_path, compression=compression)
+    n = write_to_h5(gen, output_path, compression=compression, attrs=attrs)
 
     if n == 0:
         print("[WARNING] No entries were written. Check your input path.", file=sys.stderr)
@@ -496,6 +726,22 @@ def main():
     # Quick verification
     print(f"\nVerifying output...")
     _verify_h5(output_path, args.num_boxes, args.feature_dim, sample_size=min(n, 20))
+
+    if args.metadata_output:
+        metadata_path = Path(args.metadata_output)
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata = {
+            "output_h5": str(output_path),
+            "entries_written": n,
+            "source_format": attrs["source_format"],
+            "num_boxes": args.num_boxes,
+            "feature_dim": args.feature_dim,
+            "info_json": str(args.info_json) if args.info_json else None,
+            "questions_json": str(args.questions_json) if args.questions_json else None,
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, indent=2)
+        print(f"Metadata written to {metadata_path}")
     print("Done.")
 
 

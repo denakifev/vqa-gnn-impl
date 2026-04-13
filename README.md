@@ -11,6 +11,7 @@
 пор, пока не проведён реальный end-to-end эксперимент с правильными артефактами данных.
 
 **Детальный анализ расхождений:** [GAP_ANALYSIS.md](GAP_ANALYSIS.md)
+**Paper-aligned GQA data path:** [GQA_DATA_PROCESSING_REPORT.md](GQA_DATA_PROCESSING_REPORT.md)
 
 ---
 
@@ -43,7 +44,7 @@
 | `VCRQARAccuracy` | реализована | точность QA→R |
 | `GQAAccuracy` | реализована | точность по точному совпадению |
 | `prepare_vcr_data.py` | реализован | извлечение вопросов из JSONL + KG графы |
-| `prepare_gqa_data.py` | реализован | словарь ответов + KG графы |
+| `prepare_gqa_data.py` | реализован | словарь ответов + scene-graph графы |
 | VCR/GQA смоук-тест (demo) | работает | проверяет пайплайн без реальных данных |
 | Численные результаты статьи | **не подтверждены** | требуется реальный end-to-end запуск |
 
@@ -62,8 +63,10 @@
 ## Что ограничивает честное воспроизведение числовых результатов статьи
 
 - Точные веса детектора объектов из статьи не опубликованы (визуальные признаки — приближение).
-- Точный пайплайн построения KG-подграфов не описан полностью; здесь используется
-  ConceptNet Numberbatch с простым извлечением сущностей.
+- GQA: точный paper code не опубликован; здесь воспроизводится article-like
+  path через official scene graphs, GloVe и bbox alignment.
+- VCR: точный пайплайн concept graph не описан полностью; здесь используется
+  ConceptNet/Numberbatch-приближение.
 - Точный HuggingFace-чекпойнт не зафиксирован в статье; здесь принят `roberta-large`.
 - Числовые результаты статьи не подтверждены реальным end-to-end запуском.
 - VCR: grounding ссылок на объекты (ссылки типа `[0, 2]` → "person car") реализован
@@ -77,7 +80,7 @@
 | Языковой энкодер | предобученная RoBERTa | `roberta-large` по умолчанию |
 | Реализация GNN | недоступна публично | dense GAT (функционально эквивалентен) |
 | Построение KG | on-the-fly из внешнего KG | офлайн, заранее подготовленные HDF5 |
-| KG-граф | специальный пайплайн статьи | ConceptNet 5.7 + Numberbatch; структура приближённая |
+| KG-граф | специальный пайплайн статьи | GQA: official scene graphs + GloVe; VCR: ConceptNet/Numberbatch approximation |
 | Визуальные признаки | детектор, специфичный для статьи | ожидаются готовые bottom-up features |
 | VCR object references | region-level grounding | замена категорией объекта (приближение) |
 | Числа из статьи | заявлены | не подтверждены в этом репозитории |
@@ -223,39 +226,49 @@ data/gqa/
 
 **Построение артефактов GQA:**
 
+Подробный отчёт по текущему GQA data path: [GQA_DATA_PROCESSING_REPORT.md](GQA_DATA_PROCESSING_REPORT.md)
+
 ```bash
-# Шаг 1: Построить словарь ответов (top-1852 из train):
-python scripts/prepare_gqa_data.py \
-  --build-vocab \
-  --questions data/gqa/questions/train_balanced_questions.json \
-  --output-vocab data/gqa/gqa_answer_vocab.json \
-  --top-n 1852
+# Один чистый raw -> processed pipeline:
+python scripts/prepare_gqa_data.py prepare-all \
+  --train-questions data/raw/gqa/questions/train_balanced_questions.json \
+  --val-questions data/raw/gqa/questions/val_balanced_questions.json \
+  --scene-graphs data/raw/gqa/train_sceneGraphs.json data/raw/gqa/val_sceneGraphs.json \
+  --glove data/raw/glove/glove.840B.300d.txt \
+  --raw-features data/raw/gqa/objects \
+  --info-json data/raw/gqa/gqa_objects_info.json \
+  --processed-dir data/gqa
 
-# Шаг 2: KG-подграфы (train):
-python scripts/prepare_gqa_data.py \
-  --build-graphs \
-  --questions data/gqa/questions/train_balanced_questions.json \
-  --numberbatch data/conceptnet/numberbatch-en-19.08.txt.gz \
-  --output data/gqa/knowledge_graphs/train_graphs.h5 \
-  --d-kg 300
+# Строгая проверка перед train/eval:
+python scripts/validate_gqa_data.py \
+  --data-dir data/gqa \
+  --answer-vocab data/gqa/gqa_answer_vocab.json \
+  --text-encoder data/roberta-large
 
-# Шаг 3: KG-подграфы (val):
-python scripts/prepare_gqa_data.py \
-  --build-graphs \
-  --questions data/gqa/questions/val_balanced_questions.json \
-  --numberbatch data/conceptnet/numberbatch-en-19.08.txt.gz \
-  --output data/gqa/knowledge_graphs/val_graphs.h5 \
-  --d-kg 300
+# Kaggle-ready packaging:
+VARIANT=mini MINI_N=500 bash scripts/stage_gqa_for_kaggle.sh
+VARIANT=full bash scripts/stage_gqa_for_kaggle.sh
 ```
 
-### ConceptNet Numberbatch (нужен для VCR и GQA)
+### Внешние знания: VCR и GQA
+
+Для `GQA` теперь нужны:
+
+```bash
+# official GQA scene graphs + GloVe 300d
+# prepare_gqa_data.py ожидает:
+#   --scene-graphs train_sceneGraphs.json val_sceneGraphs.json
+#   --glove /path/to/glove.840B.300d.txt
+```
+
+Для `VCR` по-прежнему нужен `ConceptNet Numberbatch`:
 
 ```bash
 mkdir -p data/conceptnet
 wget -P data/conceptnet \
   https://conceptnet.s3.amazonaws.com/downloads/2019/numberbatch/numberbatch-en-19.08.txt.gz
 
-# Опционально, для лучшей структуры рёбер:
+# Опционально, для лучшей структуры рёбер VCR concept graph:
 wget -P data/conceptnet \
   https://s3.amazonaws.com/conceptnet/downloads/2019/edges/conceptnet-assertions-5.7.0.csv.gz
 ```
@@ -754,7 +767,7 @@ saved/<run_name>/
 ├── README.md
 ├── scripts/
 │   ├── prepare_vcr_data.py                # [PAPER] VCR KG графы из JSONL
-│   ├── prepare_gqa_data.py                # [PAPER] GQA словарь ответов + KG графы
+│   ├── prepare_gqa_data.py                # [PAPER] GQA словарь ответов + scene-graph графы
 │   ├── prepare_answer_vocab.py            # [устаревший VQA v2] словарь ответов
 │   ├── prepare_visual_features.py         # конвертация признаков в HDF5
 │   ├── prepare_kg_graphs.py               # KG подграфы из ConceptNet
@@ -787,7 +800,7 @@ saved/<run_name>/
         ├── inference_vqa.yaml             # [legacy] VQA v2 inference
         ├── model/
         │   ├── vqa_gnn_vcr.yaml           # [PAPER] num_answers=1 for VCR
-        │   ├── vqa_gnn_gqa.yaml           # [PAPER] num_answers=1852 for GQA
+        │   ├── vqa_gnn_gqa.yaml           # [PAPER] num_answers=1842 for GQA
         │   └── vqa_gnn.yaml               # [legacy] num_answers=3129 for VQA v2
         ├── datasets/
         │   ├── {vcr_qa,vcr_qar,vcr_demo,vcr_demo_qar}.yaml

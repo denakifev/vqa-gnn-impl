@@ -53,6 +53,7 @@ def _gqa_toy_batch(B: int = 4, N_v: int = 4, N_kg: int = 3, L: int = 8, d_v: int
         "question_attention_mask": torch.ones(B, L, dtype=torch.long),
         "graph_node_features": torch.randn(B, N_kg, d_kg),
         "graph_adj": torch.ones(B, N_total, N_total),
+        "graph_edge_types": torch.zeros(B, N_total, N_total, dtype=torch.long),
         "graph_node_types": torch.zeros(B, N_total, dtype=torch.long),
         "labels": torch.randint(0, num_answers, (B,)),
         "question_id": [str(i) for i in range(B)],
@@ -157,6 +158,7 @@ class TestGQACollate:
         assert batch["visual_features"].shape[0] == B
         assert batch["labels"].shape == (B,)
         assert batch["question_input_ids"].shape[0] == B
+        assert batch["graph_edge_types"].shape[0] == B
 
     def test_no_vcr_keys(self):
         """GQA batch must NOT contain VCR-specific keys."""
@@ -478,6 +480,7 @@ class TestGQADemoDataset:
         assert item["question_attention_mask"].dtype == torch.long
         assert item["graph_node_features"].dtype == torch.float32
         assert item["graph_adj"].dtype == torch.float32
+        assert item["graph_edge_types"].dtype == torch.long
         assert item["graph_node_types"].dtype == torch.long
         assert item["labels"].dtype == torch.long
         assert isinstance(item["question_id"], str)

@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import random
@@ -12,6 +13,33 @@ from omegaconf import OmegaConf
 
 from src.logger.logger import setup_logging
 from src.utils.io_utils import ROOT_PATH
+
+
+def patch_hydra_argparse_compat():
+    """
+    Make Hydra's lazy help objects compatible with Python 3.14 argparse.
+
+    Hydra 1.3 adds a non-string help object for ``--shell-completion``.
+    Python 3.14 validates help strings more eagerly and raises before the CLI
+    parser is fully constructed. We coerce non-string help objects to strings
+    only at help-expansion time, leaving the rest of argparse unchanged.
+    """
+    expand_help = argparse.HelpFormatter._expand_help
+    if getattr(expand_help, "_hydra_py314_compat", False):
+        return
+
+    def _expand_help_with_lazy_support(self, action):
+        help_value = action.help
+        if help_value is not None and not isinstance(help_value, str):
+            try:
+                action.help = str(help_value)
+                return expand_help(self, action)
+            finally:
+                action.help = help_value
+        return expand_help(self, action)
+
+    _expand_help_with_lazy_support._hydra_py314_compat = True
+    argparse.HelpFormatter._expand_help = _expand_help_with_lazy_support
 
 
 def set_worker_seed(worker_id):

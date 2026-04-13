@@ -6,9 +6,9 @@ val:
   data_dir: "data/gqa"
   answer_vocab_path: "data/gqa/gqa_answer_vocab.json"
   max_question_len: 30
-  num_visual_nodes: 36
-  max_kg_nodes: 30
+  num_visual_nodes: 100
+  max_kg_nodes: 100
   d_visual: 2048
-  d_kg: 300
+  d_kg: 600
   text_encoder_name: "roberta-large"
   instance_transforms: ${transforms.instance_transforms.inference}

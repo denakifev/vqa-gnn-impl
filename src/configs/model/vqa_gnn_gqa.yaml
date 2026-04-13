@@ -3,10 +3,10 @@ _target_: src.model.VQAGNNModel
 # Visual feature dimension (bottom-up / GQA features: 2048)
 d_visual: 2048
 
-# KG node feature dimension.
+# Textual scene-graph node feature dimension.
 # MUST MATCH: d_kg in gqa*.yaml dataset configs
 #             AND --d-kg used in scripts/prepare_gqa_data.py
-d_kg: 300
+d_kg: 600
 
 # Hidden dimension (matches RoBERTa-large: 1024)
 d_hidden: 1024
@@ -17,12 +17,14 @@ num_gnn_layers: 3
 # Attention heads per GAT layer
 num_heads: 8
 
-# GQA balanced split answer vocabulary size.
-# Build with: python scripts/prepare_gqa_data.py --build-vocab
-# Default: 1852 (GQA balanced split standard answer space).
-# Deviation from paper: exact answer vocab construction not disclosed; this
-# count follows the standard GQA balanced split evaluation protocol.
-num_answers: 1852
+# GQA answer vocabulary size for the paper-aligned setup.
+# Build with: python scripts/prepare_gqa_data.py answer-vocab \
+#   --questions train_balanced_questions.json val_balanced_questions.json \
+#   --output-vocab data/gqa/gqa_answer_vocab.json \
+#   --target-size 1842
+#
+# Paper target: 1842 answer classes.
+num_answers: 1842
 
 # Dropout rate
 dropout: 0.1
