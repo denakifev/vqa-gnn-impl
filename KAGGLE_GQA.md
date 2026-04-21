@@ -32,11 +32,11 @@ data/gqa/
     └── val_features.h5
 ```
 
-### 1.2 Official Scene Graphs и GloVe
+### 1.2 Официальные scene graphs и GloVe
 
-Для paper-like GQA graph path теперь нужны:
+Для GQA graph path, максимально близкого к статье, теперь нужны:
 
-- official `train_sceneGraphs.json` / `val_sceneGraphs.json` или эквивалентный combined export;
+- официальные `train_sceneGraphs.json` / `val_sceneGraphs.json` или эквивалентный объединённый export;
 - GloVe `300d` файл, который будет передан в `--glove`;
 - официальный GQA object-feature release с `gqa_objects_info.json`.
 
@@ -61,7 +61,7 @@ data/raw/gqa/
 релиза и упаковать в runtime HDF5 (`100` объектов × `2048` dim):
 
 ```bash
-# Train split:
+# Обработка train split:
 python scripts/prepare_gqa_data.py visual-features \
     --raw-features data/raw/gqa/objects \
     --info-json data/raw/gqa/gqa_objects_info.json \
@@ -69,7 +69,7 @@ python scripts/prepare_gqa_data.py visual-features \
     --output data/gqa/visual_features/train_features.h5 \
     --num-visual-nodes 100 --feature-dim 2048
 
-# Val split:
+# Обработка val split:
 python scripts/prepare_gqa_data.py visual-features \
     --raw-features data/raw/gqa/objects \
     --info-json data/raw/gqa/gqa_objects_info.json \
@@ -78,11 +78,11 @@ python scripts/prepare_gqa_data.py visual-features \
     --num-visual-nodes 100 --feature-dim 2048
 ```
 
-Это сохраняет official GQA object-feature semantics и split-specific `imageId` coverage.
+Это сохраняет официальную семантику GQA object features и split-specific покрытие `imageId`.
 
 ---
 
-## 2. Preprocessing: paper-aligned GQA pipeline
+## 2. Препроцессинг: GQA Pipeline, Согласованный Со Статьёй
 
 Подробное описание решений и приближений: [GQA_DATA_PROCESSING_REPORT.md](GQA_DATA_PROCESSING_REPORT.md)
 
@@ -101,11 +101,11 @@ python scripts/prepare_gqa_data.py prepare-all \
 
 Она:
 
-- копирует official balanced questions в processed layout;
+- копирует официальные balanced questions в processed layout;
 - строит детерминированный `gqa_answer_vocab.json`;
 - строит детерминированный `gqa_relation_vocab.json`;
-- пакует official GQA object features в `100 x 2048` HDF5;
-- строит paper-like graph artifacts из `question node + visual SG + textual SG`;
+- пакует официальные GQA object features в `100 x 2048` HDF5;
+- строит graph artifacts, близкие к статье, из `question node + visual SG + textual SG`;
 - пишет служебные metadata JSON.
 
 Нижележащие шаги можно запускать отдельно:
@@ -131,10 +131,10 @@ python scripts/validate_gqa_data.py \
 
 ## 3. Подготовка Kaggle Dataset
 
-### 3.1 Mini-вариант (для sanity runs, рекомендуется для первого запуска)
+### 3.1 Мини-Вариант Для Sanity-Проверки
 
-Mini-вариант содержит первые 500 вопросов из train и val. Позволяет проверить весь
-pipeline на Kaggle без затрат GPU-квоты на обучение.
+Мини-вариант содержит первые 500 вопросов из train и val. Он позволяет
+проверить весь pipeline на Kaggle без затрат GPU-квоты на полноценное обучение.
 
 ```bash
 VARIANT=mini MINI_N=500 bash scripts/stage_gqa_for_kaggle.sh
@@ -142,7 +142,7 @@ VARIANT=mini MINI_N=500 bash scripts/stage_gqa_for_kaggle.sh
 
 Создаёт: `kaggle_staging/gqa-gnn-data-mini/`
 
-### 3.2 Full-вариант (для реального обучения)
+### 3.2 Полный вариант (для реального обучения)
 
 ```bash
 VARIANT=full bash scripts/stage_gqa_for_kaggle.sh
@@ -152,7 +152,7 @@ VARIANT=full bash scripts/stage_gqa_for_kaggle.sh
 
 Внимание: копирование полных HDF5 файлов занимает время и требует ~15–30 GB свободного места.
 
-### 3.3 Редактирование metadata перед загрузкой
+### 3.3 Редактирование Metadata Перед Загрузкой
 
 Откройте `kaggle_staging/gqa-gnn-data/dataset-metadata.json` и замените:
 ```json
@@ -176,8 +176,8 @@ kaggle datasets version -p kaggle_staging/gqa-gnn-data -m "VQA-GNN GQA data"
 
 ### 4.1 Подключение датасетов
 
-В настройках Notebook подключите:
-- `KAGGLE_USERNAME/gqa-gnn-data` (или `-mini` для sanity runs)
+В настройках notebook подключите:
+- `KAGGLE_USERNAME/gqa-gnn-data` (или `-mini` для sanity-проверок)
 - `KAGGLE_USERNAME/roberta-large` (или другой офлайн-энкодер)
 
 Путь к данным в Notebook: `/kaggle/input/gqa-gnn-data/`
@@ -201,7 +201,7 @@ kaggle datasets version -p kaggle_staging/gqa-gnn-data -m "VQA-GNN GQA data"
 
 ## 5. Запуск обучения на Kaggle
 
-### 5.1 Smoke test (mini-данные, мало эпох)
+### 5.1 Смоук-тест (mini-данные, мало эпох)
 
 ```bash
 TASK=gqa \
@@ -282,14 +282,14 @@ python inference.py --config-name inference_gqa \
 |---|---|
 | train_features.h5 | ~6–10 GB |
 | val_features.h5 | ~2–4 GB |
-| train_graphs.h5 (d_kg=300) | ~2–4 GB |
-| val_graphs.h5 (d_kg=300) | ~0.5–1 GB |
+| train_graphs.h5 (`d_kg=600`) | ~3–6 GB |
+| val_graphs.h5 (`d_kg=600`) | ~0.7–1.5 GB |
 | train_balanced_questions.json | ~800 MB |
 | val_balanced_questions.json | ~130 MB |
 | gqa_answer_vocab.json | < 1 MB |
 | **Итого** | **~12–20 GB** |
 
-Mini-вариант (500 вопросов): < 100 MB.
+Мини-вариант (500 вопросов): < 100 MB.
 
 ---
 
@@ -298,8 +298,8 @@ Mini-вариант (500 вопросов): < 100 MB.
 | Аспект | В статье | Здесь |
 |---|---|---|
 | Визуальные признаки | Официальный GQA object-feature format | Пакуется в runtime HDF5 `100×2048` |
-| Graph construction | Question node + visual/textual scene graphs | Офлайн, HDF5 (prepare_gqa_data.py), relation ids сохраняются отдельно |
-| Entity extraction | Вероятно NER/entity linking | Детерминированный rule-based linker с longest-match |
-| Answer vocab | Paper target: 1842 classes | Детерминированный vocab по official balanced train+val |
+| Построение графа | Question node + visual/textual scene graphs | Офлайн, HDF5 (`prepare_gqa_data.py`), relation ids сохраняются отдельно |
+| Извлечение сущностей | Вероятно NER/entity linking | Детерминированный rule-based linker с longest-match |
+| Словарь ответов | Целевое paper-значение: 1842 класса | Детерминированный vocab по официальному `balanced train+val` |
 
 Все отклонения и приближения задокументированы в `GAP_ANALYSIS.md` и `GQA_DATA_PROCESSING_REPORT.md`.

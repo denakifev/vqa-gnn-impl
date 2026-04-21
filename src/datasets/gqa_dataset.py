@@ -131,6 +131,8 @@ class GQADataset(Dataset):
         limit: Optional[int] = None,
         shuffle_index: bool = False,
         strict_answer_vocab: bool = True,
+        expect_graph_edge_types: bool = True,
+        strict_graph_schema: bool = True,
     ):
         """
         Args:
@@ -148,6 +150,17 @@ class GQADataset(Dataset):
             shuffle_index (bool): shuffle samples before applying limit.
             strict_answer_vocab (bool): fail if a labeled sample cannot be
                 mapped into the provided answer vocabulary.
+            expect_graph_edge_types (bool): if True, require `graph_edge_types`
+                to be present in every graph HDF5 group. Set to False to
+                accept legacy artifacts produced by an older preprocessing
+                path that did not store typed edges (edge types will be
+                zero-filled). This is a data-contract toggle, not a silent
+                fallback — an explicit config decision is required.
+            strict_graph_schema (bool): if True, probe the first graph HDF5
+                sample on first HDF5 open and fail fast when its
+                `node_features` width does not equal `d_kg`, or when
+                `graph_edge_types` is missing while
+                `expect_graph_edge_types=True`. See DATA_CONTRACTS.md.
         """
         self.partition = partition
         self.data_dir = Path(data_dir)
@@ -158,6 +171,8 @@ class GQADataset(Dataset):
         self.d_kg = d_kg
         self.n_total = num_visual_nodes + 1 + max_kg_nodes
         self.strict_answer_vocab = strict_answer_vocab
+        self.expect_graph_edge_types = expect_graph_edge_types
+        self.strict_graph_schema = strict_graph_schema
 
         # Load answer vocabulary
         vocab_path = Path(answer_vocab_path)
@@ -274,25 +289,34 @@ class GQADataset(Dataset):
             self._visual_h5 = h5py.File(self._visual_h5_path, "r")
             self._graph_h5 = h5py.File(self._graph_h5_path, "r")
             self._validate_h5_metadata()
+            if self.strict_graph_schema:
+                self._validate_graph_sample_contract()
 
     def _validate_h5_metadata(self) -> None:
         """
         Validate optional file-level attrs written by the new GQA pipeline.
 
         Old artifacts without attrs remain loadable; new artifacts get stricter
-        consistency checks to catch data/config mismatches early.
+        consistency checks to catch data/config mismatches early. A dedicated
+        sample-level probe (`_validate_graph_sample_contract`) covers legacy
+        artifacts that lack these attrs altogether.
         """
         visual_num_boxes = self._visual_h5.attrs.get("num_boxes")
         visual_feature_dim = self._visual_h5.attrs.get("feature_dim")
         if visual_num_boxes is not None and int(visual_num_boxes) != self.num_visual_nodes:
             raise ValueError(
-                f"Visual HDF5 expects num_boxes={visual_num_boxes}, "
-                f"but dataset config requests num_visual_nodes={self.num_visual_nodes}."
+                f"[GQA data contract] Visual HDF5 declares num_boxes={visual_num_boxes}, "
+                f"but dataset config requests num_visual_nodes={self.num_visual_nodes}.\n"
+                f"  file: {self._visual_h5_path}\n"
+                f"  fix: align dataset config `num_visual_nodes` or rebuild visual "
+                f"features with: scripts/prepare_gqa_data.py visual-features "
+                f"--num-boxes {self.num_visual_nodes}"
             )
         if visual_feature_dim is not None and int(visual_feature_dim) != self.d_visual:
             raise ValueError(
-                f"Visual HDF5 expects feature_dim={visual_feature_dim}, "
-                f"but dataset config requests d_visual={self.d_visual}."
+                f"[GQA data contract] Visual HDF5 declares feature_dim={visual_feature_dim}, "
+                f"but dataset config requests d_visual={self.d_visual}.\n"
+                f"  file: {self._visual_h5_path}"
             )
 
         graph_d_kg = self._graph_h5.attrs.get("d_kg")
@@ -300,27 +324,119 @@ class GQADataset(Dataset):
         graph_max_kg_nodes = self._graph_h5.attrs.get("max_kg_nodes")
         if graph_d_kg is not None and int(graph_d_kg) != self.d_kg:
             raise ValueError(
-                f"Graph HDF5 expects d_kg={graph_d_kg}, "
-                f"but dataset config requests d_kg={self.d_kg}."
+                f"[GQA data contract] Graph HDF5 declares d_kg={graph_d_kg}, "
+                f"but dataset config requests d_kg={self.d_kg}.\n"
+                f"  file: {self._graph_h5_path}\n"
+                f"  fix: set model/dataset `d_kg={graph_d_kg}` or rebuild graphs with: "
+                f"scripts/prepare_gqa_data.py knowledge-graphs ... --d-kg {self.d_kg}"
             )
         if (
             graph_num_visual_nodes is not None
             and int(graph_num_visual_nodes) != self.num_visual_nodes
         ):
             raise ValueError(
-                f"Graph HDF5 expects num_visual_nodes={graph_num_visual_nodes}, "
-                f"but dataset config requests num_visual_nodes={self.num_visual_nodes}."
+                f"[GQA data contract] Graph HDF5 declares num_visual_nodes="
+                f"{graph_num_visual_nodes}, but dataset config requests "
+                f"num_visual_nodes={self.num_visual_nodes}.\n"
+                f"  file: {self._graph_h5_path}"
             )
         if graph_max_kg_nodes is not None and int(graph_max_kg_nodes) != self.max_kg_nodes:
             raise ValueError(
-                f"Graph HDF5 expects max_kg_nodes={graph_max_kg_nodes}, "
-                f"but dataset config requests max_kg_nodes={self.max_kg_nodes}."
+                f"[GQA data contract] Graph HDF5 declares max_kg_nodes="
+                f"{graph_max_kg_nodes}, but dataset config requests "
+                f"max_kg_nodes={self.max_kg_nodes}.\n"
+                f"  file: {self._graph_h5_path}"
             )
 
         if self._graph_h5.attrs.get("fully_connected_fallback_used") is True:
             logger.warning(
                 "KG HDF5 reports fully_connected_fallback_used=True. "
                 "This artifact predates the stricter paper-aligned GQA pipeline."
+            )
+
+    def _validate_graph_sample_contract(self) -> None:
+        """
+        Probe the first graph HDF5 entry and fail fast on contract violations.
+
+        Legacy artifacts (older GQA pipeline) are missing the file-level attrs
+        that `_validate_h5_metadata` checks. This sample-level probe catches
+        the common mismatches regardless of whether attrs are present:
+
+          - `node_features` dim != d_kg             (e.g. 300 vs expected 600)
+          - `graph_edge_types` missing while `expect_graph_edge_types=True`
+          - required datasets missing (`adj_matrix`, `node_features`, ...)
+
+        Errors include: what was expected, what was found, the file path, and
+        a short remediation hint. See DATA_CONTRACTS.md.
+        """
+        sample_key: Optional[str] = None
+        for entry in self._index:
+            qid = entry["question_id"]
+            if qid in self._graph_h5:
+                sample_key = qid
+                break
+        if sample_key is None:
+            # Fall back to first group in HDF5 if no index entry matches (rare).
+            keys = list(self._graph_h5.keys())
+            if not keys:
+                raise ValueError(
+                    f"[GQA data contract] Graph HDF5 has no entries.\n"
+                    f"  file: {self._graph_h5_path}"
+                )
+            sample_key = keys[0]
+
+        grp = self._graph_h5[sample_key]
+
+        for required in ("node_features", "adj_matrix", "node_types"):
+            if required not in grp:
+                raise ValueError(
+                    f"[GQA data contract] Graph HDF5 group '{sample_key}' is missing "
+                    f"required dataset '{required}'.\n"
+                    f"  file: {self._graph_h5_path}\n"
+                    f"  expected group members: node_features, adj_matrix, "
+                    f"node_types, graph_edge_types"
+                )
+
+        actual_d_kg = int(grp["node_features"].shape[-1])
+        if actual_d_kg != self.d_kg:
+            raise ValueError(
+                f"[GQA data contract] Graph HDF5 sample '{sample_key}' has "
+                f"node_features with d_kg={actual_d_kg}, but dataset config "
+                f"requests d_kg={self.d_kg}.\n"
+                f"  file: {self._graph_h5_path}\n"
+                f"  fix options (pick one):\n"
+                f"    (a) rebuild graphs with the current scene-graph pipeline:\n"
+                f"        python scripts/prepare_gqa_data.py knowledge-graphs ... "
+                f"--d-kg {self.d_kg}\n"
+                f"    (b) align config to the stored artifact — override both\n"
+                f"        model.d_kg={actual_d_kg} and datasets.train.d_kg="
+                f"{actual_d_kg} datasets.val.d_kg={actual_d_kg}\n"
+                f"        (non paper-faithful; see DATA_CONTRACTS.md).\n"
+                f"  blocking a silent dim mismatch mid-batch is intentional."
+            )
+
+        has_edge_types = "graph_edge_types" in grp
+        if self.expect_graph_edge_types and not has_edge_types:
+            raise ValueError(
+                f"[GQA data contract] Graph HDF5 sample '{sample_key}' is missing "
+                f"`graph_edge_types`, but `expect_graph_edge_types=True`.\n"
+                f"  file: {self._graph_h5_path}\n"
+                f"  fix options (pick one):\n"
+                f"    (a) rebuild graphs with the current pipeline to emit typed\n"
+                f"        edges:  python scripts/prepare_gqa_data.py "
+                f"knowledge-graphs ...\n"
+                f"    (b) accept legacy untyped artifacts explicitly by setting\n"
+                f"        datasets.train.expect_graph_edge_types=False "
+                f"datasets.val.expect_graph_edge_types=False\n"
+                f"        (edge types will be zero-filled; `not paper-faithful yet`)."
+            )
+        if not self.expect_graph_edge_types and not has_edge_types:
+            logger.warning(
+                "[GQA data contract] Graph HDF5 artifacts do not carry "
+                "`graph_edge_types`. Running with zero-filled edge types "
+                "per explicit `expect_graph_edge_types=False`. This run is "
+                "`not paper-faithful yet` with respect to GQA scene-graph "
+                "relations."
             )
 
     def __len__(self) -> int:

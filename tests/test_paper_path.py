@@ -555,3 +555,212 @@ class TestDkgConsistency:
         layer = DenseGATLayer(d_model=d_hidden, num_heads=2, dropout=0.0)
         out = layer(x, adj)
         assert out.shape == (B4, N_total, d_hidden), "GNN output shape mismatch"
+
+
+# ---------------------------------------------------------------------------
+# 10. Relation-aware DenseGATLayer and GQAVQAGNNModel edge-type consumption
+# ---------------------------------------------------------------------------
+
+
+class TestRelationAwareDenseGAT:
+    def test_vcr_path_num_relations_zero_is_no_op(self):
+        """VCR uses num_relations=0; layer must have no relation_bias module."""
+        from src.model.gnn_core import DenseGATLayer
+
+        layer = DenseGATLayer(d_model=16, num_heads=2, dropout=0.0)
+        assert layer.num_relations == 0
+        assert layer.relation_bias is None
+
+    def test_forward_shape_with_edge_types(self):
+        from src.model.gnn_core import DenseGATLayer
+
+        B, N, d, R = 2, 6, 16, 5
+        layer = DenseGATLayer(
+            d_model=d, num_heads=2, dropout=0.0, num_relations=R
+        )
+        x = torch.randn(B, N, d)
+        adj = torch.ones(B, N, N)
+        edge_types = torch.randint(0, R, (B, N, N), dtype=torch.long)
+        out = layer(x, adj, edge_types=edge_types)
+        assert out.shape == (B, N, d)
+
+    def test_zero_init_matches_untyped_at_start(self):
+        """Freshly-initialized relation bias is zero, so forward with/without
+        edge_types must match numerically (no-op at init)."""
+        from src.model.gnn_core import DenseGATLayer
+
+        torch.manual_seed(0)
+        B, N, d, R = 2, 5, 16, 7
+        layer = DenseGATLayer(
+            d_model=d, num_heads=2, dropout=0.0, num_relations=R
+        )
+        layer.eval()
+        x = torch.randn(B, N, d)
+        adj = torch.ones(B, N, N)
+        edge_types = torch.randint(0, R, (B, N, N), dtype=torch.long)
+        out_no_edges = layer(x, adj, edge_types=None)
+        out_with_edges = layer(x, adj, edge_types=edge_types)
+        assert torch.allclose(out_no_edges, out_with_edges, atol=1e-6)
+
+    def test_relation_bias_changes_output_after_perturbation(self):
+        """After breaking the zero-init, edge_types must influence the output."""
+        from src.model.gnn_core import DenseGATLayer
+
+        torch.manual_seed(1)
+        B, N, d, R = 2, 5, 16, 7
+        layer = DenseGATLayer(
+            d_model=d, num_heads=2, dropout=0.0, num_relations=R
+        )
+        layer.eval()
+        with torch.no_grad():
+            layer.relation_bias.weight.normal_()
+        x = torch.randn(B, N, d)
+        adj = torch.ones(B, N, N)
+        edge_types = torch.randint(0, R, (B, N, N), dtype=torch.long)
+        out_no_edges = layer(x, adj, edge_types=None)
+        out_with_edges = layer(x, adj, edge_types=edge_types)
+        assert not torch.allclose(out_no_edges, out_with_edges)
+
+    def test_backward_with_edge_types_no_nan(self):
+        from src.model.gnn_core import DenseGATLayer
+
+        B, N, d, R = 2, 6, 16, 4
+        layer = DenseGATLayer(
+            d_model=d, num_heads=2, dropout=0.0, num_relations=R
+        )
+        x = torch.randn(B, N, d, requires_grad=True)
+        adj = torch.ones(B, N, N)
+        edge_types = torch.randint(0, R, (B, N, N), dtype=torch.long)
+        out = layer(x, adj, edge_types=edge_types)
+        out.sum().backward()
+        assert layer.relation_bias.weight.grad is not None
+        assert not torch.any(torch.isnan(layer.relation_bias.weight.grad))
+        assert not torch.any(torch.isnan(x.grad))
+
+    def test_out_of_range_edge_id_fails_loud(self):
+        from src.model.gnn_core import DenseGATLayer
+
+        B, N, d, R = 1, 4, 8, 3
+        layer = DenseGATLayer(
+            d_model=d, num_heads=2, dropout=0.0, num_relations=R
+        )
+        x = torch.randn(B, N, d)
+        adj = torch.ones(B, N, N)
+        edge_types = torch.full((B, N, N), R + 1, dtype=torch.long)
+        with pytest.raises(ValueError, match="num_relations"):
+            _ = layer(x, adj, edge_types=edge_types)
+
+
+class TestVCRInstanceIdentifiers:
+    def test_same_category_distinct_indices_get_distinct_ids(self):
+        from src.datasets.vcr_dataset import _vcr_tokens_to_text
+
+        objects = ["person", "car", "person"]
+        tokens = ["Why", "are", [0, 2], "here", "?"]
+        text = _vcr_tokens_to_text(tokens, objects)
+        assert "person0" in text
+        assert "person2" in text
+        assert "person0 and person2" in text
+
+    def test_single_object_reference_renders_with_index(self):
+        from src.datasets.vcr_dataset import _vcr_tokens_to_text
+
+        objects = ["dog"]
+        tokens = ["is", [0], "happy", "?"]
+        text = _vcr_tokens_to_text(tokens, objects)
+        assert "dog0" in text
+
+    def test_no_objects_list_falls_back_to_objectN(self):
+        from src.datasets.vcr_dataset import _vcr_tokens_to_text
+
+        tokens = ["hello", [3]]
+        text = _vcr_tokens_to_text(tokens, None)
+        assert "object3" in text
+
+    def test_category_with_space_sanitized(self):
+        from src.datasets.vcr_dataset import _vcr_object_mention
+
+        assert _vcr_object_mention(0, ["trash can"]) == "trash_can0"
+
+
+class TestGQAModelConsumesEdgeTypes:
+    def _toy_model(self, num_relations: int):
+        """Build a tiny GQAVQAGNNModel with a stub text encoder to avoid HF downloads."""
+        from unittest.mock import MagicMock, patch
+
+        from src.model.gqa_model import GQAVQAGNNModel
+
+        # Stub AutoModel so we don't pull down roberta-large.
+        class _StubHF(torch.nn.Module):
+            def __init__(self, hidden: int):
+                super().__init__()
+                self.config = MagicMock(hidden_size=hidden)
+                self.embed = torch.nn.Embedding(128, hidden)
+
+            def forward(self, input_ids, attention_mask):
+                h = self.embed(input_ids)
+                return MagicMock(last_hidden_state=h)
+
+            def parameters(self, recurse: bool = True):  # noqa: D401
+                return self.embed.parameters()
+
+        with patch("transformers.AutoModel.from_pretrained", return_value=_StubHF(32)):
+            model = GQAVQAGNNModel(
+                d_visual=8,
+                d_kg=4,
+                d_hidden=32,
+                num_gnn_layers=2,
+                num_heads=4,
+                num_answers=5,
+                num_relations=num_relations,
+                text_encoder_name="stub",
+            )
+        model.eval()
+        return model
+
+    def _toy_batch(self, B: int, N_v: int, N_kg: int, d_v: int, d_kg: int, R: int):
+        N_total = N_v + 1 + N_kg
+        return {
+            "visual_features": torch.randn(B, N_v, d_v),
+            "question_input_ids": torch.randint(0, 100, (B, 4)),
+            "question_attention_mask": torch.ones(B, 4, dtype=torch.long),
+            "graph_node_features": torch.randn(B, N_kg, d_kg),
+            "graph_adj": torch.ones(B, N_total, N_total),
+            "graph_edge_types": torch.randint(0, R, (B, N_total, N_total), dtype=torch.long),
+            "graph_node_types": torch.zeros(B, N_total, dtype=torch.long),
+        }
+
+    def test_forward_with_edge_types_shape(self):
+        R = 6
+        model = self._toy_model(num_relations=R)
+        batch = self._toy_batch(B=2, N_v=3, N_kg=2, d_v=8, d_kg=4, R=R)
+        out = model(**batch)
+        assert out["logits"].shape == (2, 5)
+
+    def test_forward_missing_edge_types_fails_loud(self):
+        model = self._toy_model(num_relations=5)
+        batch = self._toy_batch(B=2, N_v=3, N_kg=2, d_v=8, d_kg=4, R=5)
+        batch.pop("graph_edge_types")
+        with pytest.raises(ValueError, match="graph_edge_types"):
+            _ = model(**batch)
+
+    def test_edge_types_actually_reach_gnn(self):
+        """Perturbing relation_bias of a trained layer must change the output."""
+        R = 4
+        model = self._toy_model(num_relations=R)
+        batch = self._toy_batch(B=2, N_v=3, N_kg=2, d_v=8, d_kg=4, R=R)
+        with torch.no_grad():
+            baseline = model(**batch)["logits"].clone()
+            for layer in model.gnn_layers:
+                layer.relation_bias.weight.normal_()
+            perturbed = model(**batch)["logits"]
+        assert not torch.allclose(baseline, perturbed)
+
+    def test_num_relations_zero_ablation_ignores_edge_types(self):
+        """num_relations=0 reverts to untyped GAT (ablation path)."""
+        model = self._toy_model(num_relations=0)
+        batch = self._toy_batch(B=2, N_v=3, N_kg=2, d_v=8, d_kg=4, R=1)
+        out = model(**batch)
+        assert out["logits"].shape == (2, 5)
+        for layer in model.gnn_layers:
+            assert layer.relation_bias is None

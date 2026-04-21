@@ -71,7 +71,7 @@ wget -P data/conceptnet \
 
 ---
 
-## 2. Preprocessing: KG-подграфы
+## 2. Препроцессинг: KG-Подграфы
 
 VCR не имеет единого файла с вопросами — они встроены в JSONL. Скрипт извлекает
 тексты вопросов и строит KG-подграфы, используя annot_id как ключ.
@@ -127,11 +127,11 @@ python scripts/validate_vcr_data.py \
 
 ---
 
-## 3. Подготовка Kaggle Dataset (PRIVATE)
+## 3. Подготовка Kaggle Dataset (Только Private)
 
-### 3.1 Mini-вариант (для sanity runs)
+### 3.1 Мини-Вариант Для Sanity-Проверки
 
-Mini-вариант содержит первые 200 аннотаций из train и val. Быстро проверяет
+Мини-вариант содержит первые 200 аннотаций из train и val. Быстро проверяет
 весь pipeline без затрат GPU-квоты.
 
 ```bash
@@ -140,7 +140,7 @@ VARIANT=mini MINI_N=200 bash scripts/stage_vcr_for_kaggle.sh
 
 Создаёт: `kaggle_staging/vcr-gnn-data-mini/`
 
-### 3.2 Full-вариант (для реального обучения)
+### 3.2 Полный вариант (для реального обучения)
 
 ```bash
 VARIANT=full bash scripts/stage_vcr_for_kaggle.sh
@@ -148,10 +148,10 @@ VARIANT=full bash scripts/stage_vcr_for_kaggle.sh
 
 Создаёт: `kaggle_staging/vcr-gnn-data/`
 
-### 3.3 Редактирование metadata
+### 3.3 Редактирование Metadata
 
 В `dataset-metadata.json` замените `KAGGLE_USERNAME` на ваш username.
-Не меняйте `"name": "other"` — это правильная license label для VCR.
+Не меняйте `"name": "other"` — это корректная license label для VCR.
 
 ### 3.4 Загрузка на Kaggle (ТОЛЬКО PRIVATE)
 
@@ -172,8 +172,8 @@ kaggle datasets version -p kaggle_staging/vcr-gnn-data -m "VCR VQA-GNN data"
 
 ### 4.1 Подключение датасетов
 
-В настройках Notebook подключите:
-- `KAGGLE_USERNAME/vcr-gnn-data` (или `-mini` для sanity)
+В настройках notebook подключите:
+- `KAGGLE_USERNAME/vcr-gnn-data` (или `-mini` для sanity-проверки)
 - `KAGGLE_USERNAME/roberta-large`
 
 Путь к данным: `/kaggle/input/vcr-gnn-data/`
@@ -198,7 +198,7 @@ os.environ["COMET_API_KEY"] = "offline_placeholder"
 
 ## 5. Запуск обучения на Kaggle
 
-### 5.1 Smoke test (mini-данные)
+### 5.1 Смоук-тест (mini-данные)
 
 ```bash
 TASK=vcr \
@@ -293,7 +293,7 @@ python inference.py --config-name inference_vcr \
 | val_graphs.h5 (d_kg=300) | ~0.3–0.5 GB |
 | **Итого** | **~12–18 GB** |
 
-Mini-вариант (200 аннотаций): < 50 MB.
+Мини-вариант (200 аннотаций): < 50 MB.
 
 ---
 
@@ -302,8 +302,8 @@ Mini-вариант (200 аннотаций): < 50 MB.
 | Аспект | В статье | Здесь |
 |---|---|---|
 | Визуальные признаки | R2C Faster RCNN features | Bottom-up HDF5 (36×2048, приближение) |
-| VCR object references | Region-level grounding | Замена категорией объекта (текст) |
-| KG construction | On-the-fly | Офлайн HDF5 (prepare_vcr_data.py) |
+| Ссылки на объекты VCR | Привязка на уровне регионов | Замена категорией объекта (текст) |
+| Построение KG | On-the-fly | Офлайн HDF5 (`prepare_vcr_data.py`) |
 | KG по кандидатам | Возможно, кандидато-зависимый | Один KG на вопрос (все 4 кандидата) |
 | Entity extraction | Вероятно NER | Простая токенизация |
 

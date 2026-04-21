@@ -72,13 +72,42 @@ _DEMO_NOTICE = (
 VCR_NUM_CANDIDATES = 4
 
 
+def _vcr_object_mention(index: int, objects: Optional[list]) -> str:
+    """
+    Render a single VCR object reference as a per-instance identifier.
+
+    Two annotations referring to the same image but to different
+    instances of the same category (e.g. two "person" detections) get
+    distinct identifiers: "person0" vs. "person2". This is what makes
+    VCR commonsense questions about multiple people of the same type
+    answerable at all — a plain category-text rendering collapses both
+    to "person" and loses identity.
+
+    This is an instance-identifier approximation of VCR's native
+    region-grounded references (the paper assumes access to per-region
+    detector features, not just category labels). It disambiguates
+    instances but does not bind mentions to visual region features.
+    """
+    if not objects or index < 0 or index >= len(objects):
+        return f"object{index}" if index >= 0 else "object"
+    category = str(objects[index]).strip() or "object"
+    # Keep the category token alphanumeric so downstream tokenizers don't
+    # split "person0" into odd subwords more than they would "person".
+    category = "".join(ch if ch.isalnum() else "_" for ch in category).strip("_")
+    if not category:
+        category = "object"
+    return f"{category}{index}"
+
+
 def _vcr_tokens_to_text(tokens: list, objects: Optional[list] = None) -> str:
     """
     Convert a VCR token list to a plain text string.
 
     VCR tokens can be strings or integer lists (object references).
     Object references like [0, 2] mean "the 0th and 2nd detected objects".
-    We replace them with the object category name(s) if `objects` is provided.
+    We render them as per-instance identifiers ("person0 and person2")
+    rather than bare category names so that two mentions referring to
+    different instances remain distinguishable.
 
     Args:
         tokens (list): VCR token list from annotations.
@@ -89,12 +118,8 @@ def _vcr_tokens_to_text(tokens: list, objects: Optional[list] = None) -> str:
     parts = []
     for tok in tokens:
         if isinstance(tok, list):
-            # Object reference: list of integer indices
-            if objects:
-                names = [objects[i] for i in tok if i < len(objects)]
-                parts.append(" and ".join(names) if names else "object")
-            else:
-                parts.append("object")
+            mentions = [_vcr_object_mention(int(i), objects) for i in tok]
+            parts.append(" and ".join(mentions) if mentions else "object")
         else:
             parts.append(str(tok))
     return " ".join(parts)
@@ -137,7 +162,10 @@ class VCRDataset(Dataset):
         'qar' → QA→R: encode [question; correct_answer; rationale_candidate_j]
 
     Deviation from paper:
-        VCR object references are resolved to category name text.
+        VCR object references are rendered as per-instance identifiers
+        (e.g. "person0 and person2") rather than as region-grounded
+        mentions bound to detector features. Instance identity is
+        preserved; visual region grounding is still an approximation.
         KG is built from question text only (same for all 4 candidates).
         Visual features assumed to be 36×2048 bottom-up style features.
     """
@@ -156,6 +184,7 @@ class VCRDataset(Dataset):
         instance_transforms=None,
         limit: Optional[int] = None,
         shuffle_index: bool = False,
+        strict_graph_schema: bool = True,
     ):
         """
         Args:
@@ -171,6 +200,10 @@ class VCRDataset(Dataset):
             instance_transforms: unused; kept for API compatibility.
             limit (int|None): if set, use only first `limit` samples.
             shuffle_index (bool): shuffle samples before applying limit.
+            strict_graph_schema (bool): if True, probe the first graph HDF5
+                sample on first HDF5 open and fail fast when its
+                `node_features` width does not equal `d_kg`, or when required
+                datasets are missing.
         """
         if task_mode not in ("qa", "qar"):
             raise ValueError(f"task_mode must be 'qa' or 'qar', got: {task_mode!r}")
@@ -184,6 +217,7 @@ class VCRDataset(Dataset):
         self.d_visual = d_visual
         self.d_kg = d_kg
         self.n_total = num_visual_nodes + 1 + max_kg_nodes
+        self.strict_graph_schema = strict_graph_schema
 
         # Load Hugging Face tokenizer
         try:
@@ -258,6 +292,57 @@ class VCRDataset(Dataset):
                 ) from e
             self._visual_h5 = h5py.File(self._visual_h5_path, "r")
             self._graph_h5 = h5py.File(self._graph_h5_path, "r")
+            if self.strict_graph_schema:
+                self._validate_graph_sample_contract()
+
+    def _validate_graph_sample_contract(self) -> None:
+        """
+        Probe the first graph HDF5 entry and fail fast on contract violations.
+
+        Matches the GQA pattern: legacy artifacts that silently drift from the
+        current config should be caught on first HDF5 open, not mid-batch via a
+        tensor shape error.
+        """
+        sample_key: Optional[str] = None
+        for entry in self._index:
+            aid = entry["annot_id"]
+            if aid in self._graph_h5:
+                sample_key = aid
+                break
+        if sample_key is None:
+            keys = list(self._graph_h5.keys())
+            if not keys:
+                raise ValueError(
+                    f"[VCR data contract] Graph HDF5 has no entries.\n"
+                    f"  file: {self._graph_h5_path}"
+                )
+            sample_key = keys[0]
+
+        grp = self._graph_h5[sample_key]
+        for required in ("node_features", "adj_matrix", "node_types"):
+            if required not in grp:
+                raise ValueError(
+                    f"[VCR data contract] Graph HDF5 group '{sample_key}' is missing "
+                    f"required dataset '{required}'.\n"
+                    f"  file: {self._graph_h5_path}\n"
+                    f"  expected group members: node_features, adj_matrix, node_types"
+                )
+
+        actual_d_kg = int(grp["node_features"].shape[-1])
+        if actual_d_kg != self.d_kg:
+            raise ValueError(
+                f"[VCR data contract] Graph HDF5 sample '{sample_key}' has "
+                f"node_features with d_kg={actual_d_kg}, but dataset config "
+                f"requests d_kg={self.d_kg}.\n"
+                f"  file: {self._graph_h5_path}\n"
+                f"  fix options (pick one):\n"
+                f"    (a) rebuild graphs with the current pipeline:\n"
+                f"        python scripts/prepare_vcr_data.py ... --d-kg {self.d_kg}\n"
+                f"    (b) align config to the stored artifact — override both\n"
+                f"        model.d_kg={actual_d_kg} and datasets.train.d_kg="
+                f"{actual_d_kg} datasets.val.d_kg={actual_d_kg}\n"
+                f"  see DATA_CONTRACTS.md for the VCR data contract."
+            )
 
     def __len__(self) -> int:
         return len(self._index)

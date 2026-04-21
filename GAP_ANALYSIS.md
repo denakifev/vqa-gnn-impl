@@ -1,173 +1,137 @@
-# Анализ расхождений: текущая реализация против статьи
+# Анализ Разрывов
 
-**Статья:** VQA-GNN: Reasoning with Multimodal Knowledge via Graph Neural Networks
-for Visual Question Answering (ICCV 2023 / arXiv:2205.11501)
+Дата аудита: 2026-04-20.
 
-**Дата анализа:** 2026-04-11
+Цель файла: зафиксировать реальные gaps текущего репозитория после
+архитектурного split VCR/GQA. Это не roadmap улучшения модели, а audit map для
+воспроизводимости.
 
----
+## Краткий Итог
 
-## Краткий итог
+Текущий code baseline находится в состоянии `improved paper-aligned baseline`:
 
-Предыдущее состояние этого репозитория оценивалось на **VQA v2**: open-ended
-постановка, словарь из 3129 ответов, soft BCE loss и официальная метрика точности
-VQA v2.
+- VCR/GQA split: `implemented`, `validated`.
+- GQA relation-aware message passing: `implemented`, `validated`,
+  `paper-aligned approximation` (per-(head, relation) attention bias,
+  zero-init → no-op на старте).
+- VCR per-instance object identifiers: `implemented`, `validated`,
+  `paper-aligned approximation` (disambiguates same-category refs; не
+  true region grounding).
+- Post-hoc Q→AR evaluator: `implemented`, `validated` (`scripts/eval_vcr_qar.py`
+  + `tests/test_eval_vcr_qar.py`).
+- Unit and smoke runtime: `runtime-valid` на demo/tiny audit settings.
+- Real VCR run: `blocked by data` (локальных VCR данных нет).
+- Local real GQA run: `blocked by data` (текущие `data/gqa` graph
+  artifacts не соответствуют текущему config contract).
+- Paper reproduction by numbers: `future work`.
 
-Статья VQA-GNN, однако, оценивается на двух совершенно других бенчмарках:
+## VCR Gaps
 
-| Бенчмарк | Тип задачи | Метрика(и) |
+| Gap | Статус | Классификация | Доказательство |
+|---|---|---|---|
+| Нет локальных VCR real-data artifacts | `not validated yet` | `blocked by data` | `datasets=vcr_qa` и `datasets=vcr_qar` падают на `data/vcr/train.jsonl` |
+| Object references: per-instance identifiers, но не region-grounded | `implemented`, `paper-aligned approximation` | `future work` | `src/datasets/vcr_dataset.py::_vcr_object_mention` рендерит `person0`/`person2`, но features региона detector'а не подключаются |
+| Visual features assumed as pre-extracted `36×2048` | `paper-aligned approximation` | `future work` | `src/configs/datasets/vcr_*.yaml`, `vcr_dataset.py` |
+| KG — offline HDF5 и question-level | `paper-aligned approximation` | `non-blocking engineering deviation` | `VCRDataset._load_graph` |
+| Post-hoc Q→AR evaluator над paired predictions | `implemented`, `validated` | — | `scripts/eval_vcr_qar.py`, `tests/test_eval_vcr_qar.py`; inferencer persists `sample_id` |
+| Exact paper train protocol не доказан | `not validated yet` | `future work` | Q→A и QA→R — separate configs; paper-number run отсутствует |
+
+## GQA Gaps
+
+| Gap | Статус | Классификация | Доказательство |
+|---|---|---|---|
+| Local graph HDF5 uses 300-d node features | `not validated yet` | `blocked by data` | `data/gqa/knowledge_graphs/train_graphs.h5` first sample `node_features (2, 300)` |
+| Current config/model expects `d_kg=600` | `validated` config, local data mismatch | `blocked by data` | `src/configs/model/vqa_gnn_gqa.yaml`, `src/configs/datasets/gqa.yaml` |
+| Local graph HDF5 lacks `graph_edge_types` | `not validated yet` | `blocked by data` | first HDF5 group без `graph_edge_types` |
+| Local graph HDF5 attrs empty | `not validated yet` | `non-blocking engineering deviation` | HDF5 attrs `{}`; `GQADataset` probes first graph sample and fails fast |
+| Relation-aware message passing | `implemented`, `validated`, `paper-aligned approximation` | — | `DenseGATLayer(num_relations>0)` добавляет learned per-(head, relation) bias в attention logits; `GQAVQAGNNModel.forward` передаёт `graph_edge_types`; tests `TestRelationAwareDenseGAT`, `TestGQAModelConsumesEdgeTypes` |
+| `num_relations` config aligned с real relation vocab | `not validated yet` | `blocked by data` | default `512` — safe upper bound; точное `relation_count_total` неизвестно до пересборки graphs |
+| Scene-graph preprocessing code не запущен end-to-end на full raw data | `not validated yet` | `blocked by data` | unit tests покрывают toy graph construction |
+| Real GQA baseline numbers отсутствуют | `not validated yet` | `future work` | нет completed train/val metrics on real data |
+
+Важное различие:
+
+- `scripts/prepare_gqa_data.py` и `src/datasets/gqa_preprocessing.py` являются
+  paper-like на уровне кода: official scene graphs, GloVe object/attribute
+  features, bbox alignment, `d_kg=2*glove_dim`, `graph_edge_types`, attrs,
+  `conceptnet_used=False`.
+- Локальные runtime artifacts в `data/gqa/knowledge_graphs/` не собраны этим
+  current path или были получены со старыми settings. Mismatch теперь ловится
+  явно через `src/datasets/gqa_dataset.py`, а не всплывает tensor-copy crash
+  mid-batch.
+
+## Gaps Общего Ядра
+
+| Gap | Статус | Классификация | Impact |
+|---|---|---|---|
+| Dense GAT вместо confirmed paper GNN | `paper-aligned approximation` | `non-blocking engineering deviation` | Valid for smoke/runtime, not exact reproduction |
+| Relation-aware attention bias: equivalence с paper GNN form не verified | `paper-aligned approximation` | `future work` | Learned per-(head, relation) scalar bias — минимальная paper-faithful инъекция typed edges; числовая эквивалентность с paper не проверена |
+| Text encoder default requires HF artifact | `paper-aligned approximation` | `non-blocking engineering deviation` | `roberta-large` cached locally in audit env; new env may need download |
+| Pooling/fusion not numerically matched to paper | `paper-aligned approximation` | `future work` | Нет ablation/numerical validation |
+
+## Training Protocol Gaps
+
+| Gap | Статус | Классификация |
 |---|---|---|
-| **VCR** (Visual Commonsense Reasoning) | multiple choice из 4 вариантов | Q→A, QA→R, Q→AR |
-| **GQA** (Generalized Visual Question Answering) | open-ended с фиксированным словарём | Accuracy |
+| No real end-to-end VCR Q→A run | `not validated yet` | `blocked by data` |
+| No real end-to-end VCR QA→R run | `not validated yet` | `blocked by data` |
+| No real end-to-end GQA run | `not validated yet` | `blocked by data` |
+| Paired Q→AR evaluator over saved predictions | `implemented`, `validated` | `future work` для real runs (evaluator готов, не хватает saved predictions) |
+| Exact LR schedule/optimizer parity with paper unknown | `paper-aligned approximation` | `non-blocking engineering deviation` |
+| Default writer is Comet online | `runtime-valid` with override | `non-blocking engineering deviation` |
 
-Это несоответствие означает, что прежний `paper_path = VQA v2` **не был
-воспроизведением статьи**. Код для VQA v2 сохранён как `legacy_vqa/`
-(датасеты, loss, metrics, configs) и больше не является путём воспроизведения
-статьи по умолчанию.
+## Gaps Контура Данных
 
----
-
-## Инвентаризация расхождений
-
-### 1. Датасет — КРИТИЧНО
-
-| Файл / расположение | Текущее (старое) поведение | Требуется по статье | Что исправлено |
+| Область | Статус | Классификация | Следующее действие |
 |---|---|---|---|
-| `src/datasets/vqa_dataset.py` | Читает формат VQA v2 JSONL, строит словарь из 3129 ответов | Формат VCR JSONL (4 кандидата на вопрос) | Добавлен `src/datasets/vcr_dataset.py` |
-| `src/datasets/vqa_dataset.py` | Формат аннотаций VQA v2 | Формат GQA JSON (1 GT-ответ на вопрос) | Добавлен `src/datasets/gqa_dataset.py` |
-| `src/configs/datasets/vqa*.yaml` | Пути к данным VQA v2 | Пути и форматы данных VCR/GQA | Добавлены конфиги `vcr*.yaml` и `gqa*.yaml` |
+| VCR annotations/features/KG | `not validated yet` | `blocked by data` | Подготовить `data/vcr` according to configs |
+| GQA local graph artifacts | `not validated yet` | `blocked by data` | Пересобрать через `scripts/prepare_gqa_data.py prepare-all` или `knowledge-graphs ... --d-kg 600`; либо явно запустить legacy non-paper-faithful config с `d_kg=300` и `expect_graph_edge_types=False` |
+| GQA relation vocab | `not validated yet` локально | `blocked by data` | Убедиться, что `gqa_relation_vocab.json` и HDF5 `graph_edge_types` существуют; выставить `model.num_relations` ≥ `relation_count_total` |
+| Test dependency declaration | `not validated yet` | `non-blocking engineering deviation` | `pytest` есть в `.venv`, но отсутствует в `requirements.txt` |
+| Environment path | `validated` только в `.venv` | `non-blocking engineering deviation` | Использовать `.venv/bin/python` или активировать `.venv`; system Python lacks dependencies |
 
-### 2. Постановка задачи — КРИТИЧНО
+## Ожидаемое Влияние На Воспроизводимость
 
-| Аспект | Текущее состояние (VQA v2) | Требуется (VCR) | Что исправлено |
-|---|---|---|---|
-| Пространство ответов | Фиксированный словарь из 3129 классов | 4 кандидатных предложения на вопрос | В VCR batch расширяется B→B×4; модель использует `num_answers=1` |
-| Пространство ответов | Фиксированный словарь из 3129 классов | Фиксированный словарь GQA примерно из 1852 классов | Добавлены `gqa_answer_vocab.json`, `num_answers=1852` |
-| Тип метки | Soft labels (`min(count/3,1)`) | Жёсткая метка 0–3 (VCR) | Cross-entropy по 4 score |
-| Тип метки | Soft labels | Единственный точный GT-ответ (GQA) | Cross-entropy с единственным GT |
+`blocked by data`:
 
-### 3. Функция потерь — КРИТИЧНО
+- VCR не может начать real training, пока не появятся data files.
+- GQA local full run не может стартовать с текущими artifacts, потому что
+  fail-fast validation raises:
+  `ValueError: [GQA data contract] ... node_features with d_kg=300, but dataset config requests d_kg=600`.
+- `num_relations` нельзя свести к фактическому `relation_count_total`
+  до пересборки graph artifacts.
 
-| Файл | Текущее поведение | Требуется | Что исправлено |
-|---|---|---|---|
-| `src/loss/vqa_loss.py` | Soft binary CE по словарю размерности 3129 | CE по 4 вариантам (VCR) | Добавлен `src/loss/vcr_loss.py` |
-| `src/loss/vqa_loss.py` | Soft binary CE по словарю размерности 3129 | CE по словарю примерно из 1852 классов (GQA) | Добавлен `src/loss/gqa_loss.py` |
+`future work`:
 
-### 4. Метрики — КРИТИЧНО
+- numerical equivalence relation-aware attention bias с paper GNN form
+  не verified;
+- region-grounded VCR object references (per-instance identifiers
+  реализованы как approximation);
+- completed paper-number runs для VCR Q→A, VCR QA→R, GQA;
+- post-hoc Q→AR run over paired saved predictions (evaluator и инфра
+  готовы, не хватает real predictions).
 
-| Файл | Текущее поведение | Требуется | Что исправлено |
-|---|---|---|---|
-| `src/metrics/vqa_metric.py` | soft VQA accuracy через `min(count/3,1)` | VCR Q→A accuracy | Добавлен `VCRQAAccuracy` в `src/metrics/vcr_metric.py` |
-| `src/metrics/vqa_metric.py` | VQA soft accuracy | VCR QA→R accuracy | Добавлен `VCRQARAccuracy` |
-| `src/metrics/vqa_metric.py` | VQA soft accuracy | VCR Q→AR joint accuracy | Добавлен `VCRQARJointAccuracy` (только для inference; нужны сохранённые предсказания обоих запусков) |
-| `src/metrics/vqa_metric.py` | VQA soft accuracy | Точность GQA по точному совпадению | Добавлен `GQAAccuracy` в `src/metrics/gqa_metric.py` |
+`non-blocking engineering deviation`:
 
-### 5. Формат выхода модели — ВЫСОКИЙ ПРИОРИТЕТ
+- dense GAT и offline HDF5 preprocessing допустимы для improved
+  paper-aligned baseline, если они честно задокументированы;
+- Comet offline и Matplotlib cache warnings не инвалидируют model/runtime checks;
+- demo smoke results — только runtime evidence, не paper evidence.
 
-| Файл | Текущее поведение | Требуется | Что исправлено |
-|---|---|---|---|
-| `src/model/vqa_gnn.py` `num_answers=3129` | Logits по 3129 ответам VQA v2 | VCR: скалярный score на кандидата (`num_answers=1`) | Конфиг `src/configs/model/vqa_gnn_vcr.yaml` задаёт `num_answers=1` |
-| `src/model/vqa_gnn.py` | То же | GQA: logits по словарю GQA (~1852) | Конфиг `src/configs/model/vqa_gnn_gqa.yaml` задаёт `num_answers=1852` |
+## Запрещённые Claims
 
-### 6. Архитектура, специфичная для VCR — ВЫСОКИЙ ПРИОРИТЕТ
+Нельзя утверждать:
 
-| Аспект | Текущее состояние | Требуется для VCR | Что исправлено |
-|---|---|---|---|
-| Вход текстового энкодера | Только текст вопроса | `[question; candidate_answer]` для Q→A | `VCRDataset` токенизирует Q+A_i совместно; QA-context node кодирует обе части |
-| Вход текстового энкодера | Только текст вопроса | `[question; answer; candidate_rationale]` для QA→R | `VCRDataset` токенизирует Q+A+R_j совместно |
-| Расширение batch | Не требуется | Каждый вопрос даёт 4 входа модели (по одному на кандидата) | `vcr_collate_fn` расширяет B→B×4 |
+- `paper reproduced`;
+- `fully paper-faithful`;
+- `ready for full reproduction`;
+- `GQA real baseline validated`;
+- `VCR real baseline validated`;
+- `Q→AR reproduced`.
 
-### 7. Скрипты препроцессинга — СРЕДНИЙ ПРИОРИТЕТ
+Разрешённая формулировка:
 
-| Расхождение | Что исправлено |
-|---|---|
-| Не было препроцессинга для VCR | Добавлен `scripts/prepare_vcr_data.py` (парсинг JSONL, KG-графы, индекс визуальных признаков) |
-| Не было препроцессинга для GQA | Добавлен `scripts/prepare_gqa_data.py` (парсинг JSON, словарь ответов, KG-графы) |
-| `prepare_kg_graphs.py` работал только с JSON VQA v2 | Теперь вызывается через VCR/GQA-обёртки, которые приводят формат |
-
-### 8. Конфиги — ВЫСОКИЙ ПРИОРИТЕТ
-
-| Расхождение | Что исправлено |
-|---|---|
-| Не было training-конфига для VCR | Добавлены `src/configs/baseline_vcr_qa.yaml` (Q→A) и `baseline_vcr_qar.yaml` (QA→R) |
-| Не было training-конфига для GQA | Добавлен `src/configs/baseline_gqa.yaml` |
-| Не было inference-конфига для VCR | Добавлен `src/configs/inference_vcr.yaml` |
-| Не было inference-конфига для GQA | Добавлен `src/configs/inference_gqa.yaml` |
-
-### 9. Документация — ВЫСОКИЙ ПРИОРИТЕТ
-
-| Расхождение | Что исправлено |
-|---|---|
-| README описывал VQA v2 как бенчмарк статьи | README обновлён: основными paper-бенчмарками теперь указаны VCR и GQA |
-| Не было инструкции по оценке Q→AR | Описано в README и конфигах |
-
----
-
-## Архитектурные расхождения (контролируемые отклонения)
-
-Это известные отличия между текущей архитектурой и статьёй.
-Каждое из них задокументировано прямо в соответствующем исходном файле.
-
-| Компонент | В статье | В этом репозитории | Статус |
-|---|---|---|---|
-| Реализация GNN | Не указана (вероятно, `torch_geometric`) | Dense multi-head GAT (функционально эквивалентен при N≲200 узлах) | **Допустимое приближение** |
-| Текстовый энкодер | Предобученная RoBERTa | `roberta-large` (чекпойнт HF) | **Согласовано со статьёй** |
-| Построение KG-подграфа | On-the-fly из ConceptNet | Предварительно собранный офлайн HDF5 | **Допустимое приближение** |
-| Извлечение сущностей для KG | Описано не полностью | Простая токенизация + фильтр стоп-слов | **Недостаточно документированное отклонение** |
-| KG-эмбеддинги | Кастомные (размерность не раскрыта) | ConceptNet Numberbatch 300-dim | **Недостаточно документированное отклонение** |
-| VCR object references | Рассуждение на уровне объектов | Имена категорий объектов (текстовая подстановка) | **Приближение; точная деталь статьи не раскрыта** |
-| Визуальные признаки | Детектор, специфичный для статьи | Предварительно извлечённые bottom-up features (36×2048) | **Допущение** |
-
----
-
-## Что теперь согласовано со статьёй
-
-После изменений в этом коммите:
-
-- **Бенчмарки**: VCR (Q→A, QA→R) и GQA, а не VQA v2
-- **Задача VCR**: multiple choice из 4 вариантов через расширение batch B→B×4
-- **Текстовое кодирование VCR**: совместное кодирование `[Q; candidate]` в QA-context super-node
-- **Loss для VCR**: cross-entropy по 4 score кандидатов
-- **Метрики VCR**: accuracy для Q→A и QA→R (обучаются отдельно; Q→AR считается совместно)
-- **Loss для GQA**: cross-entropy с единственным GT-ответом
-- **Метрика GQA**: точность по точному совпадению
-
----
-
-## Что остаётся приближением
-
-- Dense GAT вместо sparse GNN (функционально близко, но менее эффективно)
-- KG строится из ConceptNet Numberbatch (точный источник KG в статье не раскрыт)
-- Извлечение сущностей основано на простой токенизации (в статье, вероятно, есть entity linking)
-- Визуальные признаки предполагаются как bottom-up attention (точный детектор статьи не раскрыт)
-- VCR object references заменяются названием категории, а не полноценным object-level grounding
-- Точные численные результаты статьи пока не проверены end-to-end
-
----
-
-## Какие данные всё ещё нужны для запуска
-
-| Требование | Источник | Статус |
-|---|---|---|
-| Аннотации VCR (train/val/test JSONL) | https://visualcommonsense.com | Нужно получить вручную (требуется лицензия) |
-| Визуальные признаки VCR (R2C Faster RCNN) | Официальный релиз VCR | Нужно получить вручную |
-| Аннотации GQA (balanced split JSON) | https://cs.stanford.edu/people/dorarad/gqa/ | Нужно получить вручную |
-| Визуальные признаки GQA (Visual Genome) | Официальный релиз GQA | Нужно получить вручную |
-| ConceptNet Numberbatch | https://conceptnet.io/downloads/ | Доступно для открытого скачивания |
-
----
-
-## Устаревший код для VQA v2
-
-Старые датасеты, loss, metrics и конфиги для VQA v2 сохранены на месте.
-Это **не путь воспроизведения статьи**. Их можно использовать как:
-
-- рабочий пример общего пайплайна;
-- baseline для экспериментов на VQA v2, если этот бенчмарк нужен отдельно.
-
-Это различие всегда помечено в названиях конфигов:
-
-- `baseline_vqa.yaml` — VQA v2 (legacy, не статья)
-- `baseline_vcr_qa.yaml` — VCR Q→A (согласовано со статьёй)
-- `baseline_vcr_qar.yaml` — VCR QA→R (согласовано со статьёй)
-- `baseline_gqa.yaml` — GQA (согласовано со статьёй)
+- `improved paper-aligned baseline`: architecture split, losses, metrics,
+  relation-aware GQA message passing, VCR per-instance object identifiers,
+  post-hoc Q→AR evaluator и config composition — всё validated на demo/tiny
+  path; real-data reproduction остаётся `blocked by data` и `future work`.

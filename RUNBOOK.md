@@ -13,42 +13,49 @@
 
 ## 1. Аудит готовности к запуску
 
-### Что готово (paper-aligned VCR + GQA)
+### Что реализовано и проверено (VCR + GQA)
 
 | Компонент | Статус | Примечание |
 |---|---|---|
-| `VQAGNNModel` | готов | dense GAT, roberta-large |
-| `VCRDataset` / `VCRDemoDataset` | готов | требует JSONL + HDF5 артефактов |
-| `GQADataset` / `GQADemoDataset` | готов | требует JSON + HDF5 артефактов |
-| `VCRLoss`, `GQALoss` | готовы | CE по кандидатам / по словарю |
-| `VCRQAAccuracy`, `VCRQARAccuracy`, `GQAAccuracy` | готовы | согласованы со статьёй |
-| `prepare_vcr_data.py` | готов | KG-подграфы из JSONL |
-| `prepare_gqa_data.py` | готов | словарь ответов + scene-graph графы |
-| `validate_vcr_data.py` | готов | проверяет JSONL + HDF5 |
-| `validate_gqa_data.py` | готов | проверяет JSON + HDF5 |
-| `stage_vcr_for_kaggle.sh` | готов | mini + full staging (PRIVATE) |
-| `stage_gqa_for_kaggle.sh` | готов | mini + full staging |
-| `run_kaggle_smoke_test.sh` | готов | GQA и VCR режимы |
-| Конфиги VCR/GQA | готовы | `baseline_vcr_{qa,qar}.yaml`, `baseline_gqa.yaml` |
-| Demo smoke-тесты | работают | проверяют пайплайн без реальных данных |
-| Числа из статьи | **не подтверждены** | требуется реальный end-to-end запуск |
+| `VCRVQAGNNModel` | `implemented`, `validated` | VCR: скалярная оценка кандидата, выход dim=1 |
+| `GQAVQAGNNModel` | `implemented`, `validated` | GQA: классификатор по словарю ответов, выход dim=1842 |
+| `VCRDataset` / `VCRDemoDataset` | `implemented`, частично `validated` | реальный путь требует JSONL + HDF5 артефактов; demo-путь `runtime-valid` |
+| `GQADataset` / `GQADemoDataset` | `implemented`, частично `validated` | реальный путь требует JSON + HDF5 артефактов; demo-путь `runtime-valid` |
+| `VCRLoss`, `GQALoss` | `implemented`, `validated` | CE по кандидатам / по словарю |
+| `VCRQAAccuracy`, `VCRQARAccuracy`, `GQAAccuracy` | `implemented`, `validated` | согласованы со статьёй на toy/demo проверках |
+| `prepare_vcr_data.py` | `implemented` | KG-подграфы из JSONL |
+| `prepare_gqa_data.py` | `implemented` | словарь ответов + scene-graph графы |
+| `validate_vcr_data.py` | `implemented` | проверяет JSONL + HDF5 |
+| `validate_gqa_data.py` | `implemented` | проверяет JSON + HDF5 |
+| `stage_vcr_for_kaggle.sh` | `implemented` | mini/full упаковка для приватного Kaggle Dataset |
+| `stage_gqa_for_kaggle.sh` | `implemented` | mini/full упаковка для Kaggle |
+| `run_kaggle_smoke_test.sh` | `implemented` | GQA и VCR режимы |
+| Конфиги VCR/GQA | `validated` | `baseline_vcr_{qa,qar}.yaml`, `baseline_gqa.yaml` успешно собираются |
+| Demo smoke-тесты | `runtime-valid` | проверяют пайплайн без реальных данных |
+| Числа из статьи | **не подтверждены** | требуется реальный сквозной запуск |
 
 ### Ключевые внешние блокеры
 
 | Блокер | Серьёзность | Обходной путь |
 |---|---|---|
-| VCR visual features (R2C Faster RCNN, ~2048-dim) | **критический** | нет; нужны заранее извлечённые |
-| GQA visual features (Visual Genome based) | **критический** | нет; нужны заранее извлечённые |
-| Точный детектор из статьи не опубликован | средний | bottom-up features как приближение |
+| Визуальные признаки VCR (R2C Faster RCNN, ~2048-dim) | **критический** | нет; нужны заранее извлечённые |
+| Визуальные признаки GQA на базе Visual Genome | **критический** | нет; нужны заранее извлечённые |
+| Точный детектор из статьи не опубликован | средний | bottom-up признаки как инженерное приближение |
 | VCR лицензия — нельзя публиковать публично | организационный | только приватный Kaggle Dataset |
 | Числа из статьи не подтверждены | информационный | честно документируем |
 
+### Контрольные документы перед реальным запуском
+
+- [VALIDATION_REPORT.md](VALIDATION_REPORT.md) — что реально запускалось и что прошло.
+- [DATA_CONTRACTS.md](DATA_CONTRACTS.md) — обязательные batch/HDF5-контракты и fail-fast поведение.
+- [GAP_ANALYSIS.md](GAP_ANALYSIS.md) — какие gaps блокируют первый реальный запуск и paper-faithful reproduction.
+
 ### Оценка объёма данных
 
-| Артефакт | Примерный объём (staging) |
+| Артефакт | Примерный объём для упаковки |
 |---|---|
-| GQA full Kaggle Dataset | ~12–20 GB |
-| VCR full Kaggle Dataset | ~12–18 GB |
+| Полный GQA Kaggle Dataset | ~12–20 GB |
+| Полный VCR Kaggle Dataset | ~12–18 GB |
 | ConceptNet Numberbatch | ~450 MB (сжатый) |
 | roberta-large checkpoint | ~1.4 GB |
 | GQA mini (500 вопросов) | < 100 MB |
@@ -56,19 +63,22 @@
 
 ---
 
-## 2. Быстрый старт без реальных данных (smoke test)
+## 2. Быстрый старт без реальных данных (смоук-тест)
 
-Смоук-тест проверяет весь training pipeline на синтетических данных. Не загружает
-roberta-large. Запускается за секунды. НЕ воспроизводит статью.
+Смоук-тест проверяет весь training pipeline на синтетических данных и НЕ
+воспроизводит статью. Базовые configs используют `roberta-large`; в свежей
+среде это может потребовать локальный checkpoint/cache или загрузку с Hugging
+Face. Для быстрого CPU-аудита использовался tiny RoBERTa override; точные
+команды зафиксированы в [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
 ```bash
-# GQA smoke test:
+# Смоук-тест GQA:
 python train.py --config-name baseline_gqa
 
-# VCR Q→A smoke test:
+# Смоук-тест VCR Q→A:
 python train.py --config-name baseline_vcr_qa
 
-# VCR QA→R smoke test:
+# Смоук-тест VCR QA→R:
 python train.py --config-name baseline_vcr_qar
 ```
 
@@ -103,7 +113,7 @@ mkdir -p data/gqa/questions
 # После скачивания:
 mv train_balanced_questions.json data/gqa/questions/
 mv val_balanced_questions.json   data/gqa/questions/
-# Visual features: разместить в data/gqa/visual_features/
+# Визуальные признаки разместить в data/gqa/visual_features/
 ```
 
 Подробнее: [KAGGLE_GQA.md](KAGGLE_GQA.md)
@@ -117,7 +127,7 @@ mkdir -p data/vcr
 # После скачивания:
 mv train.jsonl data/vcr/
 mv val.jsonl   data/vcr/
-# Visual features: разместить в data/vcr/visual_features/
+# Визуальные признаки разместить в data/vcr/visual_features/
 ```
 
 **Ограничение**: не загружайте VCR как публичный датасет на Kaggle.
@@ -126,7 +136,7 @@ mv val.jsonl   data/vcr/
 
 #### Внешние источники
 
-`GQA` использует official scene graphs + GloVe 300d.
+`GQA` использует официальные scene graphs + GloVe 300d.
 
 `VCR` использует `ConceptNet Numberbatch`:
 
@@ -144,10 +154,10 @@ wget -P data/conceptnet \
 
 ---
 
-### Этап 2: Preprocessing GQA
+### Этап 2: Препроцессинг GQA
 
 ```bash
-# Один paper-aligned pipeline:
+# Один pipeline, согласованный со статьёй:
 python scripts/prepare_gqa_data.py prepare-all \
   --train-questions data/raw/gqa/questions/train_balanced_questions.json \
   --val-questions data/raw/gqa/questions/val_balanced_questions.json \
@@ -166,9 +176,23 @@ python scripts/validate_gqa_data.py \
 
 Дополнительный отчёт по решениям и приближениям: [GQA_DATA_PROCESSING_REPORT.md](GQA_DATA_PROCESSING_REPORT.md)
 
+Минимальный runtime contract для paper-like GQA:
+
+- answer vocabulary: 1842 classes;
+- visual features: `100×2048`;
+- graph `node_features`: `d_kg=600`;
+- graph `graph_edge_types`: present;
+- graph HDF5 attrs: `d_kg`, `num_visual_nodes`, `max_kg_nodes` желательно
+  присутствуют для ранней проверки.
+
+Текущие локальные `data/gqa/knowledge_graphs/*.h5` в этой рабочей копии имеют
+legacy `d_kg=300` и не проходят strict config. Это `blocker for first real run`,
+а не paper result. Детали и допустимые legacy overrides описаны в
+[DATA_CONTRACTS.md](DATA_CONTRACTS.md).
+
 ---
 
-### Этап 3: Preprocessing VCR
+### Этап 3: Препроцессинг VCR
 
 ```bash
 # Шаг 1: KG-подграфы train (~2–4 часа, CPU):
@@ -203,10 +227,10 @@ python scripts/validate_vcr_data.py \
 
 **GQA (можно публичным или приватным):**
 ```bash
-# Mini для sanity runs:
+# Мини-вариант для sanity-проверок:
 VARIANT=mini MINI_N=500 bash scripts/stage_gqa_for_kaggle.sh
 
-# Full для реального обучения:
+# Полный вариант для реального обучения:
 VARIANT=full bash scripts/stage_gqa_for_kaggle.sh
 
 # Загрузка:
@@ -215,10 +239,10 @@ kaggle datasets create -p kaggle_staging/gqa-gnn-data
 
 **VCR (только приватный):**
 ```bash
-# Mini:
+# Мини-вариант:
 VARIANT=mini MINI_N=200 bash scripts/stage_vcr_for_kaggle.sh
 
-# Full:
+# Полный вариант:
 VARIANT=full bash scripts/stage_vcr_for_kaggle.sh
 
 # Загрузка (приватный):
@@ -234,7 +258,7 @@ kaggle datasets create -p kaggle_staging/vcr-gnn-data
 #### GQA
 
 ```bash
-# Smoke test (mini-данные):
+# Смоук-тест (mini-данные):
 TASK=gqa \
 OFFLINE=1 \
 TEXT_ENCODER_PATH=/kaggle/input/roberta-large \
@@ -261,7 +285,7 @@ python train.py --config-name baseline_gqa \
 #### VCR Q→A
 
 ```bash
-# Smoke test:
+# Смоук-тест:
 TASK=vcr VCR_TASK_MODE=qa \
 OFFLINE=1 \
 TEXT_ENCODER_PATH=/kaggle/input/roberta-large \
@@ -381,7 +405,7 @@ python scripts/prepare_kg_graphs.py --questions data/vqa/questions/train_questio
 ```
 
 Всё относящееся к VQA v2 (скрипты, конфиги, данные) остаётся для исторической
-справки, но не используется в текущем paper-aligned контуре.
+справки, но не используется в текущем контуре, согласованном со статьёй.
 
 ---
 

@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(.venv/bin/python -m pytest tests/test_paper_path.py -q --tb=short)"
+      "Bash(.venv/bin/python -m pytest tests/test_paper_path.py -q --tb=short)",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(.venv/bin/python -m pytest -q)",
+      "Bash(.venv/bin/python train.py --config-name baseline_vcr_qa --cfg job)",
+      "Bash(.venv/bin/python train.py --config-name baseline_vcr_qar --cfg job)",
+      "Bash(.venv/bin/python train.py --config-name baseline_gqa --cfg job)",
+      "Bash(.venv/bin/python inference.py --config-name inference_vcr --cfg job)",
+      "Bash(.venv/bin/python inference.py --config-name inference_gqa --cfg job)",
+      "Bash(.venv/bin/python inference.py --config-name inference_vcr inferencer.skip_model_load=True --cfg job)",
+      "Bash(.venv/bin/python inference.py --config-name inference_gqa inferencer.skip_model_load=True --cfg job)",
+      "Bash(.venv/bin/python -c \"from src.datasets.gqa_preprocessing import EDGE_TYPE_NO_EDGE, EDGE_TYPE_SELF, EDGE_TYPE_QUESTION_VISUAL, EDGE_TYPE_QUESTION_TEXTUAL; print\\('no_edge', EDGE_TYPE_NO_EDGE\\); print\\('self', EDGE_TYPE_SELF\\); print\\('q_v', EDGE_TYPE_QUESTION_VISUAL\\); print\\('q_t', EDGE_TYPE_QUESTION_TEXTUAL\\)\")",
+      "Bash(.venv/bin/python -c \"import json; d=json.load\\(open\\('data/gqa/gqa_relation_vocab.json'\\)\\); print\\('total', len\\(d.get\\('relation_to_idx',{}\\)\\)\\); print\\('sample', list\\(d.get\\('idx_to_relation', []\\)\\)[:10]\\)\")",
+      "Bash(.venv/bin/python -m pytest tests/test_eval_vcr_qar.py -q)"
     ]
   }
 }

@@ -45,3 +45,8 @@ inferencer:
   save_path: "vcr_qa_preds"
   seed: 42
   from_pretrained: "saved/vcr_qa_baseline/model_best.pth"
+  # `skip_model_load=True` bypasses the checkpoint requirement — used for
+  # demo/dry-run. Declared here so plain override syntax works:
+  #   inferencer.skip_model_load=True
+  # without needing Hydra's struct-mode `+` prefix.
+  skip_model_load: False

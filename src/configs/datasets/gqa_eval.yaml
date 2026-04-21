@@ -12,3 +12,6 @@ val:
   d_kg: 600
   text_encoder_name: "roberta-large"
   instance_transforms: ${transforms.instance_transforms.inference}
+  # See src/configs/datasets/gqa.yaml and DATA_CONTRACTS.md for details.
+  expect_graph_edge_types: True
+  strict_graph_schema: True

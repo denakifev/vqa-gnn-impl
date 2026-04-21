@@ -24,10 +24,25 @@ train:
   max_kg_nodes: 100
   d_visual: 2048
   # d_kg must match: src/configs/model/vqa_gnn_gqa.yaml (d_kg)
+  # 600 = DEFAULT_GLOVE_DIM (300) * 2 produced by the current paper-aligned
+  # scene-graph pipeline in scripts/prepare_gqa_data.py.
+  # Legacy artifacts may be 300-d; see DATA_CONTRACTS.md for how to opt in.
   d_kg: 600
   text_encoder_name: "roberta-large"
   instance_transforms: ${transforms.instance_transforms.train}
   shuffle_index: True
+  # Data-contract toggles. Defaults match the paper-aligned pipeline.
+  #
+  # expect_graph_edge_types=True  → graph HDF5 must carry `graph_edge_types`
+  #                                 (typed scene-graph relations).
+  # strict_graph_schema=True      → probe first sample on first HDF5 open and fail fast
+  #                                 on d_kg mismatch / missing edge types /
+  #                                 missing required datasets.
+  #
+  # Set `expect_graph_edge_types: False` to explicitly accept legacy artifacts
+  # that predate typed edges. See DATA_CONTRACTS.md.
+  expect_graph_edge_types: True
+  strict_graph_schema: True
 
 val:
   _target_: src.datasets.GQADataset
@@ -41,3 +56,5 @@ val:
   d_kg: 600
   text_encoder_name: "roberta-large"
   instance_transforms: ${transforms.instance_transforms.inference}
+  expect_graph_edge_types: True
+  strict_graph_schema: True

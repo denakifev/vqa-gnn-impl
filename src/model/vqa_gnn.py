@@ -4,22 +4,21 @@ for Visual Question Answering.
 
 Reference: arXiv:2205.11501 / ICCV 2023
 
-This module implements the baseline VQA-GNN model from the paper.
+This module keeps the original monolithic VQAGNNModel for backward
+compatibility and re-exports the shared GNN primitives that tests
+import from this path.
 
-Deviation from paper:
-- The paper builds the KG subgraph on-the-fly; here the graph is pre-built
-  and passed as part of the batch (graph_node_features, graph_adj,
-  graph_node_types).
-- The paper uses pretrained RoBERTa for the QA-context node; this repo now
-  defaults to `roberta-large` as the paper-aligned text encoder, while still
-  supporting overrides for smaller backbones when resources are limited.
-- The GNN is implemented with dense adjacency matrices (no torch_geometric)
-  to minimize dependencies. This is an engineering approximation: the paper
-  does not fully specify the GNN variant, so dense GAT is not guaranteed to be
-  identical to the paper's implementation. It is expected to be comparable for
-  the small graph sizes used here (N_total = N_visual + 1 + N_kg ≈ 67 nodes),
-  but this has not been verified numerically.
-- Readout uses learnable attention pooling over all graph nodes.
+Paper-aligned configs now use the task-specific classes:
+  - VCR (Q→A and QA→R): src.model.VCRVQAGNNModel  (vcr_model.py)
+  - GQA:                 src.model.GQAVQAGNNModel  (gqa_model.py)
+
+Shared primitives (DenseGATLayer, HFQuestionEncoder) live in gnn_core.py
+and are re-exported here for backward compatibility with existing imports
+(e.g. `from src.model.vqa_gnn import DenseGATLayer`).
+
+VQAGNNModel is kept for internal use and testing infrastructure. It is NOT
+the target class for paper-aligned training configs — use VCRVQAGNNModel
+or GQAVQAGNNModel for those.
 """
 
 import logging
@@ -29,161 +28,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# Re-export shared primitives so existing imports like
+#   from src.model.vqa_gnn import DenseGATLayer
+# continue to work.
+from src.model.gnn_core import DenseGATLayer, HFQuestionEncoder  # noqa: F401
+
 logger = logging.getLogger(__name__)
-
-
-class DenseGATLayer(nn.Module):
-    """
-    Dense multi-head Graph Attention Layer.
-
-    Operates on a dense [B, N, N] adjacency matrix. Suitable for
-    small-to-medium graphs in batched settings (N ≲ 200).
-
-    Reference: Veličković et al., Graph Attention Networks, ICLR 2018.
-    """
-
-    def __init__(self, d_model: int, num_heads: int = 8, dropout: float = 0.1):
-        """
-        Args:
-            d_model (int): input and output feature dimension.
-            num_heads (int): number of attention heads.
-            dropout (float): dropout probability.
-        """
-        super().__init__()
-        assert d_model % num_heads == 0, (
-            f"d_model ({d_model}) must be divisible by num_heads ({num_heads})"
-        )
-        self.num_heads = num_heads
-        self.head_dim = d_model // num_heads
-        self.scale = self.head_dim**-0.5
-
-        self.q_proj = nn.Linear(d_model, d_model)
-        self.k_proj = nn.Linear(d_model, d_model)
-        self.v_proj = nn.Linear(d_model, d_model)
-        self.out_proj = nn.Linear(d_model, d_model)
-
-        self.dropout = nn.Dropout(dropout)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.ffn = nn.Sequential(
-            nn.Linear(d_model, d_model * 4),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_model * 4, d_model),
-        )
-
-    def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x (Tensor): node features [B, N, d_model].
-            adj (Tensor): adjacency matrix [B, N, N] (0/1 or weighted).
-                          A value of 1 means an edge exists. Self-loops
-                          should be included by the caller.
-        Returns:
-            out (Tensor): updated node features [B, N, d_model].
-        """
-        B, N, _ = x.shape
-        residual = x
-        x = self.norm1(x)
-
-        # Multi-head projections: [B, N, d_model] → [B, H, N, head_dim]
-        def reshape(t):
-            return t.view(B, N, self.num_heads, self.head_dim).transpose(1, 2)
-
-        q = reshape(self.q_proj(x))
-        k = reshape(self.k_proj(x))
-        v = reshape(self.v_proj(x))
-
-        # Attention scores [B, H, N, N]
-        attn = torch.matmul(q, k.transpose(-2, -1)) * self.scale
-
-        # Mask non-edges with -inf so they get zero weight after softmax
-        adj_mask = adj.unsqueeze(1).expand_as(attn)  # [B, H, N, N]
-        attn = attn.masked_fill(adj_mask == 0, float("-inf"))
-        attn = F.softmax(attn, dim=-1)
-        # Replace NaN rows (isolated nodes, all-masked) with zero
-        attn = torch.nan_to_num(attn, nan=0.0)
-        attn = self.dropout(attn)
-
-        # Aggregate: [B, H, N, head_dim] → [B, N, d_model]
-        out = torch.matmul(attn, v)
-        out = out.transpose(1, 2).contiguous().view(B, N, -1)
-        out = self.out_proj(out)
-        out = self.dropout(out) + residual
-
-        # Feed-forward with residual
-        out = out + self.ffn(self.norm2(out))
-        return out
-
-
-class HFQuestionEncoder(nn.Module):
-    """
-    Question encoder backed by Hugging Face `AutoModel`.
-
-    Outputs the [CLS] token representation projected to d_hidden.
-    """
-
-    def __init__(
-        self,
-        d_hidden: int,
-        model_name: str = "roberta-large",
-        freeze: bool = False,
-        dropout: float = 0.1,
-    ):
-        """
-        Args:
-            d_hidden (int): output dimension after projection.
-            model_name (str): HuggingFace model name.
-            freeze (bool): if True, encoder weights are frozen.
-            dropout (float): dropout after projection.
-
-        For maximal paper alignment this repo defaults to `roberta-large`.
-        The encoder class itself is selected automatically from the Hugging Face
-        checkpoint via `AutoModel`.
-        """
-        super().__init__()
-        try:
-            from transformers import AutoModel
-
-            self.encoder = AutoModel.from_pretrained(model_name)
-            self.encoder_hidden = self.encoder.config.hidden_size
-        except ImportError as e:
-            raise ImportError(
-                "transformers is required for question encoding. "
-                "Install it with: pip install transformers"
-            ) from e
-
-        if freeze:
-            for param in self.encoder.parameters():
-                param.requires_grad = False
-            logger.info("Question encoder weights frozen.")
-
-        self.proj = nn.Sequential(
-            nn.Linear(self.encoder_hidden, d_hidden),
-            nn.LayerNorm(d_hidden),
-            nn.Dropout(dropout),
-        )
-
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Args:
-            input_ids (Tensor): token IDs [B, L].
-            attention_mask (Tensor): attention mask [B, L].
-        Returns:
-            cls_repr (Tensor): question representation [B, d_hidden].
-        """
-        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        cls_repr = outputs.last_hidden_state[:, 0, :]
-        return self.proj(cls_repr)
 
 
 class VQAGNNModel(nn.Module):
     """
     VQA-GNN model from arXiv:2205.11501.
+
+    This is the original unified implementation kept for backward
+    compatibility. Paper-aligned training configs use:
+        VCR  → src.model.VCRVQAGNNModel
+        GQA  → src.model.GQAVQAGNNModel
 
     Architecture:
       1. Project visual region features to d_hidden.
@@ -249,8 +109,9 @@ class VQAGNNModel(nn.Module):
               defaults to `roberta-large` as the closest standard checkpoint.
             - Paper uses torch_geometric / custom GNN; here dense GAT
               (engineering approximation; paper's GNN variant not fully specified).
-            - Default num_answers=3129 is a fallback; paper-aligned configs
-              override this: VCR uses num_answers=1, GQA uses num_answers=1852.
+            - Default num_answers=3129 is a VQA-v2 legacy fallback; paper-aligned
+              configs use VCRVQAGNNModel (num_answers implicit=1) or
+              GQAVQAGNNModel (num_answers=1842).
         """
         super().__init__()
 
@@ -266,7 +127,7 @@ class VQAGNNModel(nn.Module):
             nn.Dropout(dropout),
         )
 
-        # Question encoder (HF backbone + projection)
+        # Question encoder (HF backbone + projection) — from gnn_core
         self.question_encoder = HFQuestionEncoder(
             d_hidden=d_hidden,
             model_name=text_encoder_name,
@@ -284,7 +145,7 @@ class VQAGNNModel(nn.Module):
         # Node type bias embeddings (learned, added to node features)
         self.node_type_emb = nn.Embedding(self.NUM_NODE_TYPES, d_hidden)
 
-        # Graph attention layers
+        # Graph attention layers — DenseGATLayer from gnn_core
         self.gnn_layers = nn.ModuleList(
             [DenseGATLayer(d_hidden, num_heads, dropout) for _ in range(num_gnn_layers)]
         )
@@ -305,16 +166,11 @@ class VQAGNNModel(nn.Module):
 
     def _init_weights(self):
         """Xavier initialization for non-pretrained linear layers."""
-        # Collect parameter ids belonging to the pretrained encoder to avoid
-        # reinitializing downloaded Hugging Face weights.
-        # pretrained weights.
         encoder_param_ids = {id(p) for p in self.question_encoder.encoder.parameters()}
 
         for module in self.modules():
             if not isinstance(module, nn.Linear):
                 continue
-            # Skip any linear layer whose parameters are entirely inside the
-            # pretrained text encoder.
             if all(id(p) in encoder_param_ids for p in module.parameters()):
                 continue
             nn.init.xavier_uniform_(module.weight)
@@ -343,8 +199,6 @@ class VQAGNNModel(nn.Module):
         Returns:
             dict with key 'logits' (Tensor[B, num_answers]).
         """
-        B = visual_features.size(0)
-
         # 1. Project visual features → [B, N_v, d_hidden]
         vis_emb = self.visual_proj(visual_features)
 

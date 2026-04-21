@@ -1,31 +1,31 @@
-# GQA Data Processing Report
+# Отчёт по обработке данных GQA
 
-## Scope
+## Область охвата
 
-Этот документ фиксирует финальный GQA preprocessing path для текущего репозитория.
+Этот документ фиксирует финальный путь препроцессинга GQA в текущем репозитории.
 Он описывает:
 
 - какие raw-файлы требуются;
-- как строится processed layout;
-- какие решения являются article-like;
+- как формируется обработанная структура каталогов;
+- какие решения считаются близкими к статье;
 - какие приближения всё ещё остаются;
-- как подготовить Kaggle-ready package;
+- как готовить пакет для Kaggle;
 - как проверить готовность данных до реального запуска.
 
-Репозиторий не заявляет, что это точный исходный paper artifact из статьи.
+Репозиторий не утверждает, что это точный исходный артефакт статьи.
 Это максимально близкий и воспроизводимый GQA data path внутри текущего шаблона.
 
-## Required Raw Inputs
+## Необходимые исходные данные
 
-Нужны следующие исходные файлы:
+Нужны следующие raw-файлы:
 
 - `train_balanced_questions.json`
 - `val_balanced_questions.json`
-- `train_sceneGraphs.json` / `val_sceneGraphs.json` или эквивалентный combined scene-graph export
-- официальный GQA object-features release:
+- `train_sceneGraphs.json` / `val_sceneGraphs.json` или эквивалентный объединённый export
+- официальный релиз GQA object features:
   - `gqa_objects.h5` или директория shard-файлов `gqa_objects_*.h5`
   - `gqa_objects_info.json`
-- GloVe `300d` файл, передаваемый в `--glove`
+- файл GloVe `300d`, передаваемый через `--glove`
 
 Рекомендуемый raw layout:
 
@@ -43,9 +43,9 @@ data/raw/gqa/
 └── gqa_objects_info.json
 ```
 
-## Processed Layout
+## Обработанная Структура Каталогов
 
-После preprocessing expected runtime layout такой:
+После препроцессинга runtime ожидает такую структуру:
 
 ```text
 data/gqa/
@@ -68,7 +68,7 @@ data/gqa/
 └── gqa_relation_vocab.json
 ```
 
-## Final Pipeline
+## Финальный Pipeline
 
 Главная команда:
 
@@ -83,7 +83,7 @@ python scripts/prepare_gqa_data.py prepare-all \
   --processed-dir data/gqa
 ```
 
-Нижележащие команды можно запускать отдельно:
+Внутренние команды можно запускать и по отдельности:
 
 ```bash
 python scripts/prepare_gqa_data.py answer-vocab ...
@@ -91,73 +91,78 @@ python scripts/prepare_gqa_data.py visual-features ...
 python scripts/prepare_gqa_data.py knowledge-graphs ...
 ```
 
-## Article-Like Decisions
+## Решения, близкие к статье
 
-### Questions
+### Вопросы
 
 - используются официальные `train_balanced_questions.json` и `val_balanced_questions.json`;
-- legacy VQA-v2 conversion path удалён из GQA source-of-truth;
-- runtime читает те же official balanced splits.
+- legacy-путь через конвертацию в формат VQA v2 удалён из source-of-truth для GQA;
+- runtime читает те же официальные balanced splits.
 
-### Visual Features
+### Визуальные признаки
 
-- runtime expects official GQA object-feature semantics: `100 x 2048`;
-- `imageId` coverage проверяется против question splits;
-- packaged HDF5 keyed by `imageId`;
-- split-specific metadata фиксирует coverage и shape.
+- runtime ожидает официальную семантику GQA object features: `100 × 2048`;
+- покрытие `imageId` проверяется относительно question splits;
+- итоговый HDF5 упаковывается с ключами по `imageId`;
+- split-specific metadata фиксирует покрытие и форму тензоров.
 
-### Answer Vocabulary
+### Словарь ответов
 
-- answer normalization намеренно лёгкая:
-  - lowercase
-  - trim
-  - collapse internal whitespace
-- агрессивная VQA-v2 нормализация не используется, чтобы не схлопывать GQA classes искусственно;
-- fixed answer space строится детерминированно;
-- tie-breaking: `frequency desc`, затем `lexicographic`;
-- в текущем released balanced setup union `train+val` после этой нормализации даёт ровно `1842` уникальных ответа.
+- нормализация ответов намеренно лёгкая:
+  - перевод в lowercase;
+  - обрезка пробелов по краям
+  - схлопывание повторяющихся пробелов внутри строки
+- агрессивная нормализация из VQA v2 не используется, чтобы искусственно не склеивать классы GQA;
+- фиксированное пространство ответов строится детерминированно;
+- разрешение тай-брейков: сначала `frequency desc`, затем `lexicographic`;
+- в текущем released balanced setup объединение `train+val` после этой нормализации
+  даёт ровно `1842` уникальных ответа.
 
 Важно:
 
-- это решение является **инференсом из released balanced splits**, а не прямой цитатой статьи;
-- train-only balanced split даёт меньше классов (`1833`), поэтому union `train+val` здесь выбран как более близкий путь к paper target `1842`.
+- это решение является **инференсом по released balanced splits**, а не прямой цитатой статьи;
+- только train-balanced split даёт меньше классов (`1833`), поэтому здесь выбран
+  объединение `train+val` как более близкий путь к целевому значению статьи `1842`.
 
-### KG Construction
+### Построение графа знаний
 
-- для GQA больше не используется ConceptNet path;
+- для GQA больше не используется путь через ConceptNet;
 - граф строится как `question-context node + visual scene graph + textual scene graph`;
-- visual SG опирается на official object features и bbox alignment к official scene graphs;
-- textual SG node feature = `concat(GloVe(object_name), GloVe(mean_attributes))`;
-- relation edges берутся из official scene-graph predicates и сохраняются как dense `graph_edge_types`;
+- visual SG опирается на официальные object features и bbox alignment к официальным scene graphs;
+- textual SG feature узла = `concat(GloVe(object_name), GloVe(mean_attributes))`;
+- relation edges берутся из официальных scene-graph predicates и сохраняются как dense `graph_edge_types`;
 - fully-connected fallback удалён;
-- split metadata фиксирует no-match rate, average textual nodes, average visual nodes и relation-edge coverage.
+- split metadata фиксирует no-match rate, среднее число textual nodes, среднее число
+  visual nodes и покрытие relation edges.
 
-### Entity Extraction / Linking
+### Извлечение сущностей / привязка
 
 Новый linker детерминированный и rule-based:
 
-- normalizes text;
-- генерирует n-gram candidate spans;
-- предпочитает longest multiword match;
+- нормализует текст;
+- генерирует кандидатные span'ы из n-грамм;
+- предпочитает самые длинные multiword match;
 - умеет singularize tail token;
-- убирает stop-words и boilerplate question tokens;
-- не сводится к простому token split / биграммам без приоритета.
+- удаляет стоп-слова и boilerplate-токены из вопроса;
+- не сводится к простому `split` по токенам или биграммам без приоритета.
 
-Этот matcher теперь используется не для ConceptNet retrieval, а для question-to-scene-graph grounding и приоритезации textual SG nodes.
+Этот matcher теперь используется не для ConceptNet retrieval, а для
+привязки вопроса к scene graph и приоритезации textual SG nodes.
 
-## Remaining Approximations
+## Оставшиеся приближения
 
-Ниже перечислены оставшиеся отклонения от статьи:
+Ниже перечислены отклонения от статьи, которые всё ещё остаются:
 
-- KG по-прежнему строится офлайн, а не on-the-fly во время forward;
-- используется открытый GloVe `300d`, а не закрытый paper artifact;
-- exact internal paper matcher не опубликован, поэтому rule-based grounding остаётся приближением;
-- bbox alignment между scene-graph objects и official object features делается greedy IoU-правилом;
-- runtime baseline сохраняет dense graph contract; relation ids теперь сохраняются в данных, но текущий GNN runtime остаётся инженерной аппроксимацией paper message passing.
+- KG по-прежнему строится офлайн, а не во время `forward`;
+- используется открытый GloVe `300d`, а не закрытый артефакт статьи;
+- точный внутренний matcher статьи не опубликован, поэтому rule-based grounding остаётся приближением;
+- bbox alignment между scene-graph objects и official object features строится жадным правилом по IoU;
+- runtime baseline сохраняет dense graph contract; relation ids теперь едут в данных,
+  но сам GNN runtime остаётся инженерной аппроксимацией механизма message passing из статьи.
 
-Эти отклонения должны описываться как **article-like approximation**, а не как точное воспроизведение.
+Эти отклонения нужно описывать как **приближение, близкое к статье**, а не как точное воспроизведение.
 
-## Validation
+## Валидация
 
 Строгая проверка:
 
@@ -172,15 +177,15 @@ python scripts/validate_gqa_data.py \
 
 - размер answer vocab;
 - contiguous indices;
-- relation vocab и special relation ids;
+- relation vocab и специальные relation ids;
 - shape visual features;
-- coverage `imageId`;
-- coverage `question_id`;
+- покрытие `imageId`;
+- покрытие `question_id`;
 - наличие KG metadata и запрет `fully_connected_fallback`;
 - no-match rate;
-- average graph size;
+- средний размер графа;
 - наличие `graph_edge_types`;
-- runtime compatibility `dataset -> collate -> model -> loss -> metric`;
+- runtime-совместимость `dataset -> collate -> model -> loss -> metric`;
 - one-batch forward.
 
 Если нужен только data-only check без model forward:
@@ -192,15 +197,15 @@ python scripts/validate_gqa_data.py \
   --skip-runtime-check
 ```
 
-## Kaggle Packaging
+## Упаковка для Kaggle
 
-Full:
+Полный вариант:
 
 ```bash
 bash scripts/stage_gqa_for_kaggle.sh
 ```
 
-Mini:
+Мини-вариант:
 
 ```bash
 VARIANT=mini MINI_N=500 bash scripts/stage_gqa_for_kaggle.sh
@@ -215,19 +220,19 @@ python scripts/prepare_gqa_data.py stage \
   --variant full
 ```
 
-Staged package включает:
+Подготовленный пакет включает:
 
-- processed runtime files;
+- обработанные runtime files;
 - `dataset-metadata.json`;
 - `metadata/package_manifest.json`.
 
-## Ready-for-Run Checklist
+## Чек-лист готовности к запуску
 
 Перед реальным запуском baseline должны быть выполнены все пункты:
 
-- `prepare-all` completed without errors;
-- `validate_gqa_data.py` passes;
-- answer vocab size matches expected `1842`;
-- `train_features.h5` and `val_features.h5` are `100 x 2048`;
-- KG metadata shows `fully_connected_fallback_used = false`;
-- one-batch runtime forward succeeds.
+- `prepare-all` завершился без ошибок;
+- `validate_gqa_data.py` проходит успешно;
+- размер answer vocab совпадает с ожидаемым `1842`;
+- `train_features.h5` и `val_features.h5` имеют форму `100 × 2048`;
+- KG metadata показывает `fully_connected_fallback_used = false`;
+- one-batch runtime forward завершается успешно.

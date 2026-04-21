@@ -1,4 +1,4 @@
-_target_: src.model.VQAGNNModel
+_target_: src.model.GQAVQAGNNModel
 
 # Visual feature dimension (bottom-up / GQA features: 2048)
 d_visual: 2048
@@ -18,6 +18,10 @@ num_gnn_layers: 3
 num_heads: 8
 
 # GQA answer vocabulary size for the paper-aligned setup.
+# GQA is an open-ended classification task: the model outputs a
+# distribution over num_answers classes (no candidate expansion).
+# This is fundamentally different from VCR (candidate scoring, output dim=1).
+#
 # Build with: python scripts/prepare_gqa_data.py answer-vocab \
 #   --questions train_balanced_questions.json val_balanced_questions.json \
 #   --output-vocab data/gqa/gqa_answer_vocab.json \
@@ -26,9 +30,24 @@ num_heads: 8
 # Paper target: 1842 answer classes.
 num_answers: 1842
 
+# Size of the typed-edge vocabulary used by relation-aware GNN message
+# passing. Must be >= relation_count_total produced by:
+#   scripts/prepare_gqa_data.py relation-vocab
+# 512 is a conservative upper bound for the GQA balanced split with
+# full official scene graphs (4 special ids + 2 * num_predicates).
+# Override via `model.num_relations` after inspecting
+# `data/gqa/gqa_relation_vocab.json`. Setting 0 disables relation
+# awareness (ablation only; not paper-faithful).
+num_relations: 512
+
 # Dropout rate
 dropout: 0.1
 
 # Text encoder (RoBERTa-large, paper-aligned default)
 text_encoder_name: "roberta-large"
 freeze_text_encoder: False
+
+# Relation awareness:
+# GQAVQAGNNModel consumes `graph_edge_types` through every dense GAT
+# layer via a learned per-(head, relation) scalar attention bias.
+# See src/model/gqa_model.py and src/model/gnn_core.py for details.

@@ -138,11 +138,13 @@ class Inferencer(BaseTrainer):
             pred_labels = scores.argmax(dim=-1)         # [B]
             gt_labels = batch["answer_label"]           # [B]
             batch_size = B
+            sample_ids = batch.get("annot_ids")
         else:
             # GQA / standard: argmax over answer vocabulary
             batch_size = batch["logits"].shape[0]
             pred_labels = batch["logits"].argmax(dim=-1)   # [B]
             gt_labels = batch["labels"]                     # [B]
+            sample_ids = batch.get("question_id")
 
         current_id = batch_idx * batch_size
 
@@ -158,6 +160,12 @@ class Inferencer(BaseTrainer):
                 "pred_label": pred_label,
                 "label": label,
             }
+            if sample_ids is not None and i < len(sample_ids):
+                # Persist the sample identifier alongside the prediction so
+                # downstream evaluators (e.g. scripts/eval_vcr_qar.py) can
+                # join paired Q→A and QA→R runs by a stable key instead of
+                # by disk order.
+                output["sample_id"] = sample_ids[i]
 
             if self.save_path is not None:
                 # you can use safetensors or other lib here
