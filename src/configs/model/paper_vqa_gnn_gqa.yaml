@@ -1,0 +1,30 @@
+_target_: src.model.PaperGQAModel
+
+# Paper-equation GQA architecture path.
+# This config composes but is not runnable with the current GQADataset merged
+# graph contract. It requires visual-SG and textual-SG subgraph tensors with a
+# shared question node q.
+
+d_visual: 2048
+
+# Paper §5.1 GQA: textual SG nodes concatenate GloVe(object) and GloVe(attribute).
+d_kg: 600
+
+d_hidden: 1024
+
+# Paper does not restate L for GQA. We keep L=5 to mirror the VCR setting and
+# document this as not paper-faithful yet until confirmed.
+num_gnn_layers: 5
+
+# Must be replaced by exact relation_count_total after rebuilding paper-path
+# graph artifacts.
+num_relations_visual: 64
+num_relations_textual: 64
+
+# Paper §5.1 GQA: 1,842 answer classes.
+num_answers: 1842
+
+dropout: 0.0
+
+text_encoder_name: "roberta-large"
+freeze_text_encoder: False

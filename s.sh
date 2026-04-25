@@ -1,2 +1,3 @@
-cd /data/raw/gqa
-find objects -maxdepth 2 -type f | sort
+cd /Users/srs15/Documents/CourseWorkR\&D/paper_model_replication
+
+kaggle datasets create -p kaggle_staging/gqa-gnn-data --dir-mode zip

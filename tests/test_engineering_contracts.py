@@ -433,6 +433,9 @@ class TestImportSurface:
             DenseGATLayer,
             GQAVQAGNNModel,
             HFQuestionEncoder,
+            PaperGQAModel,
+            PaperMultiRelationGATLayer,
+            PaperVCRModel,
             VCRVQAGNNModel,
             VQAGNNModel,
         )
@@ -442,6 +445,9 @@ class TestImportSurface:
         assert VQAGNNModel is not None  # kept for backward compatibility
         assert DenseGATLayer is not None
         assert HFQuestionEncoder is not None
+        assert PaperMultiRelationGATLayer is not None
+        assert PaperVCRModel is not None
+        assert PaperGQAModel is not None
 
     def test_dataset_exports_preserved(self):
         from src.datasets import GQADataset, GQADemoDataset, VCRDataset, VCRDemoDataset

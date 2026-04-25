@@ -13,7 +13,13 @@
       "Bash(.venv/bin/python inference.py --config-name inference_gqa inferencer.skip_model_load=True --cfg job)",
       "Bash(.venv/bin/python -c \"from src.datasets.gqa_preprocessing import EDGE_TYPE_NO_EDGE, EDGE_TYPE_SELF, EDGE_TYPE_QUESTION_VISUAL, EDGE_TYPE_QUESTION_TEXTUAL; print\\('no_edge', EDGE_TYPE_NO_EDGE\\); print\\('self', EDGE_TYPE_SELF\\); print\\('q_v', EDGE_TYPE_QUESTION_VISUAL\\); print\\('q_t', EDGE_TYPE_QUESTION_TEXTUAL\\)\")",
       "Bash(.venv/bin/python -c \"import json; d=json.load\\(open\\('data/gqa/gqa_relation_vocab.json'\\)\\); print\\('total', len\\(d.get\\('relation_to_idx',{}\\)\\)\\); print\\('sample', list\\(d.get\\('idx_to_relation', []\\)\\)[:10]\\)\")",
-      "Bash(.venv/bin/python -m pytest tests/test_eval_vcr_qar.py -q)"
+      "Bash(.venv/bin/python -m pytest tests/test_eval_vcr_qar.py -q)",
+      "WebFetch(domain:openaccess.thecvf.com)",
+      "Bash(/Users/srs15/Documents/CourseWorkR\\\\&D/paper_model_replication/.venv/bin/python -c \"import pypdf; print\\(pypdf.__version__\\)\")",
+      "Bash(/Users/srs15/Documents/CourseWorkR\\\\&D/paper_model_replication/.venv/bin/python -c \"import pdfplumber; print\\(pdfplumber.__version__\\)\")",
+      "Bash(/Users/srs15/Documents/CourseWorkR\\\\&D/paper_model_replication/.venv/bin/python -c \"import PyPDF2; print\\(PyPDF2.__version__\\)\")",
+      "Bash(/Users/srs15/Documents/CourseWorkR\\\\&D/paper_model_replication/.venv/bin/python -m pip list)",
+      "Bash(/Users/srs15/Documents/CourseWorkR\\\\&D/paper_model_replication/.venv/bin/python -m pip install pypdf)"
     ]
   }
 }
