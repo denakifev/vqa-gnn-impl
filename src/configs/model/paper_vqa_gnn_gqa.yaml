@@ -1,9 +1,23 @@
 _target_: src.model.PaperGQAModel
 
-# Paper-equation GQA architecture path.
-# This config composes but is not runnable with the current GQADataset merged
-# graph contract. It requires visual-SG and textual-SG subgraph tensors with a
-# shared question node q.
+# Paper-equation GQA architecture path (arXiv:2205.11501 §4.1-§4.3, §5.1 GQA).
+#
+# STATUS: equation reference, NOT the runtime source-of-truth.
+#
+# Runtime source-of-truth for paper-aligned GQA training/evaluation against
+# the strict GQA package is `src/configs/model/vqa_gnn_gqa.yaml`
+# (`GQAVQAGNNModel` — single merged graph + relation-aware DenseGAT bias).
+#
+# This config composes but is NOT runnable end-to-end against the current
+# `GQADataset` batch contract. PaperGQAModel.forward() requires a
+# two-subgraph batch (visual SG + textual SG with a shared q-node index),
+# which the current preprocessing does not emit. Materialising it would
+# require new preprocessing + a new dataset / collate path; that work is
+# tracked as `blocked by external artifact` in GQA_CLOSURE_REPORT.md.
+#
+# Use this config to verify equation-level shapes in tests
+# (tests/test_paper_vqa_gnn_model.py, tests/test_paper_rgat.py), not for
+# Hydra training/inference runs.
 
 d_visual: 2048
 

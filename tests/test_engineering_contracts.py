@@ -465,3 +465,54 @@ class TestImportSurface:
         from src.model.vqa_gnn import DenseGATLayer as legacy
 
         assert core is legacy, "DenseGATLayer must be a single class, re-exported"
+
+
+# ---------------------------------------------------------------------------
+# 8. GQA runtime config contract: relation vocab and model wiring
+# ---------------------------------------------------------------------------
+
+
+class TestGQAModelConfigContract:
+    """Lock the runtime GQA model config so it stays paper-aligned.
+
+    The strict GQA package validated against this repo (uploaded to Kaggle)
+    stores `graph_edge_type_count = 624`. `DenseGATLayer` raises ValueError
+    if any edge id in the batch is >= num_relations, so the model config
+    MUST cover the relation vocab. A regression here silently breaks the
+    first training/inference batch — a unit-test guard is cheap.
+    """
+
+    EXPECTED_RELATION_COUNT = 624
+
+    def _compose(self, config_name: str, overrides: list[str]):
+        from hydra import compose, initialize_config_dir
+
+        repo_root = Path(__file__).resolve().parents[1]
+        config_dir = repo_root / "src" / "configs"
+        with initialize_config_dir(version_base=None, config_dir=str(config_dir)):
+            cfg = compose(config_name=config_name, overrides=overrides)
+        return cfg
+
+    def test_baseline_gqa_targets_gqa_model(self):
+        """`baseline_gqa` must instantiate `GQAVQAGNNModel`, not the legacy class."""
+        cfg = self._compose("baseline_gqa", [])
+        assert cfg.model._target_ == "src.model.GQAVQAGNNModel"
+
+    def test_baseline_gqa_num_relations_covers_vocab(self):
+        """`baseline_gqa` must set `model.num_relations >= 624` (validated vocab)."""
+        cfg = self._compose("baseline_gqa", [])
+        assert cfg.model.num_relations >= self.EXPECTED_RELATION_COUNT, (
+            f"baseline_gqa.model.num_relations={cfg.model.num_relations} "
+            f"is below the validated relation vocab "
+            f"({self.EXPECTED_RELATION_COUNT}); the first batch with edge ids "
+            f">= num_relations would crash DenseGATLayer."
+        )
+
+    def test_inference_gqa_num_relations_covers_vocab(self):
+        cfg = self._compose("inference_gqa", [])
+        assert cfg.model.num_relations >= self.EXPECTED_RELATION_COUNT
+
+    def test_paper_path_gqa_targets_paper_model(self):
+        """`paper_vqa_gnn_gqa` must instantiate `PaperGQAModel` (equation reference)."""
+        cfg = self._compose("paper_vqa_gnn_gqa", [])
+        assert cfg.model._target_ == "src.model.PaperGQAModel"

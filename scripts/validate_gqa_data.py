@@ -40,7 +40,7 @@ except ImportError:
 from src.datasets.gqa_dataset import GQADataset
 from src.loss.gqa_loss import GQALoss
 from src.metrics.gqa_metric import GQAAccuracy
-from src.model.vqa_gnn import VQAGNNModel
+from src.model.gqa_model import GQAVQAGNNModel
 
 
 EDGE_SPECIALS = ("__no_edge__", "__self__", "__question_visual__", "__question_textual__")
@@ -542,6 +542,7 @@ def validate_runtime_path(
     max_kg_nodes: int,
     text_encoder: str,
     runtime_batch_size: int,
+    relation_vocab_size: int,
     report: ValidationReport,
 ) -> None:
     print("\nValidating runtime path (dataset -> collate -> model -> loss -> metric)")
@@ -597,10 +598,22 @@ def validate_runtime_path(
             return
         report.ok("Runtime batch shapes match dataset / model contract.")
 
-        model = VQAGNNModel(
+        # Use the GQA-specific model on the runtime path so the validator
+        # exercises the relation-aware GNN that production configs target.
+        # `num_relations` must cover the relation vocab to match the trainer
+        # contract; falling back to 0 here would silently disable relation
+        # awareness and hide config / data mismatches.
+        if relation_vocab_size <= 0:
+            report.fail(
+                "Runtime validation requires a non-empty relation vocab "
+                "(gqa_relation_vocab.json must exist and pass schema check)."
+            )
+            return
+        model = GQAVQAGNNModel(
             d_visual=feature_dim,
             d_kg=d_kg,
             num_answers=len(dataset.answer_to_idx),
+            num_relations=relation_vocab_size,
             text_encoder_name=text_encoder,
             freeze_text_encoder=True,
         )
@@ -717,6 +730,7 @@ def main() -> None:
             max_kg_nodes=args.max_kg_nodes,
             text_encoder=args.text_encoder,
             runtime_batch_size=args.runtime_batch_size,
+            relation_vocab_size=relation_vocab_size,
             report=report,
         )
     elif args.skip_runtime_check:

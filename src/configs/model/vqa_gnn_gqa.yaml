@@ -33,12 +33,16 @@ num_answers: 1842
 # Size of the typed-edge vocabulary used by relation-aware GNN message
 # passing. Must be >= relation_count_total produced by:
 #   scripts/prepare_gqa_data.py relation-vocab
-# 512 is a conservative upper bound for the GQA balanced split with
-# full official scene graphs (4 special ids + 2 * num_predicates).
-# Override via `model.num_relations` after inspecting
-# `data/gqa/gqa_relation_vocab.json`. Setting 0 disables relation
-# awareness (ablation only; not paper-faithful).
-num_relations: 512
+# The strict GQA package validated against this repo (uploaded to Kaggle)
+# stores `graph_edge_type_count = 624` (4 specials + 2 * 310 predicates).
+# `DenseGATLayer` raises ValueError at forward() if any edge id in the
+# batch is >= num_relations, so this bound MUST cover the runtime vocab
+# or training/inference will crash on the first batch.
+# After restoring a private Kaggle package, override `model.num_relations`
+# to the value reported by `gqa_relation_vocab.json::relation_count_total`
+# if it differs.
+# Setting 0 disables relation awareness (ablation only; not paper-faithful).
+num_relations: 624
 
 # Dropout rate
 dropout: 0.1

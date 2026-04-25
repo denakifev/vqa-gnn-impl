@@ -1,149 +1,143 @@
-# Архитектурный Split VCR/GQA
+# Архитектурный Split
 
-Дата аудита: 2026-04-20.
+Дата аудита: 2026-04-25.
 
-Статус: `validated` для разделения VCR/GQA на уровне кода, Hydra composition
-и smoke-runtime. Это не означает, что численные результаты статьи
-воспроизведены.
+Статус: VCR/GQA split `implemented` и `validated` на уровне кода, configs,
+composition и smoke-runtime. Это не означает, что численные результаты статьи
+были воспроизведены.
 
 ## Краткий Итог
 
-Текущий paper path больше не является одной общей моделью с разным
-`num_answers`. Разделение реализовано явно:
+Репозиторий больше не трактует VCR и GQA как одну и ту же задачу с разными
+значениями `num_answers`.
 
-- VCR использует `VCRVQAGNNModel` и режим `candidate scoring`.
-- GQA использует `GQAVQAGNNModel` и режим `1842-way classification`.
-- Общие компоненты вынесены только в `src/model/gnn_core.py`.
-- `train.py`, `inference.py`, `Trainer` и `BaseTrainer` остались общим
-  служебным слоем.
-
-Старый `VQAGNNModel` сохранён только как backward-compatible class и re-export
-точка для старых импортов. Paper-aligned baseline configs его не используют.
-
-## Почему Старое Объединение Было Ложным
-
-Старое объединение через один `VQAGNNModel` и разные значения `num_answers`
-смешивало два разных output contracts:
-
-| Контур | Правильный contract | Почему `num_answers` не решает задачу |
+| Задача | Model contract | Output |
 |---|---|---|
-| VCR Q→A / QA→R | `[B*4, 1]`, один score на candidate | Это reranking четырёх вариантов, а не classification по словарю |
-| GQA | `[B, 1842]`, logits по answer vocabulary | Это direct answer classification без candidate expansion |
+| VCR Q->A / QA->R | candidate scoring | `[B*4, 1]` |
+| GQA | answer classification | `[B, 1842]` |
 
-Поэтому VCR и GQA разделены на уровне model, config, dataset, collate, loss и
-metrics.
+Общий код ограничен primitives в `src/model/gnn_core.py`. Task-specific batch
+semantics, heads, losses и metrics находятся вне shared core.
 
 ## Общее Ядро
 
-Общее ядро находится в `src/model/gnn_core.py`.
-
-| Компонент | Статус | Использование |
+| Компонент | Статус | Используется |
 |---|---|---|
-| `DenseGATLayer` | `implemented`, `validated`, `paper-aligned approximation` | VCR и GQA |
-| `HFQuestionEncoder` | `implemented`, `validated`, `paper-aligned approximation` | VCR и GQA |
+| `DenseGATLayer` | `implemented`, `validated`, `paper-aligned approximation` | VCR, GQA |
+| `HFQuestionEncoder` | `implemented`, `validated`, `paper-aligned approximation` | VCR, GQA |
 
-Общий код оправдан только на уровне primitives: text encoder и dense GAT.
-Task-specific output heads, batch semantics и losses вынесены из shared layer.
+Для GQA `DenseGATLayer` consumes typed `graph_edge_types` через learned
+per-relation attention bias, если `num_relations > 0`.
 
-## Стек Только Для VCR
+## Стек VCR
 
 | Слой | Файл / config | Статус |
 |---|---|---|
 | Model | `src/model/vcr_model.py::VCRVQAGNNModel` | `implemented`, `validated` |
-| Model config | `src/configs/model/vqa_gnn_vcr.yaml` | `validated` |
 | Dataset | `src/datasets/vcr_dataset.py::VCRDataset`, `VCRDemoDataset` | `implemented`, demo `runtime-valid` |
 | Collate | `src/datasets/vcr_collate.py::make_vcr_collate_fn` | `validated` |
 | Loss | `src/loss/vcr_loss.py::VCRLoss` | `validated`, `paper-aligned` |
-| Metrics | `src/metrics/vcr_metric.py::VCRQAAccuracy`, `VCRQARAccuracy`, `VCRQARJointAccuracy` | `validated` |
-| Training configs | `baseline_vcr_qa.yaml`, `baseline_vcr_qar.yaml` | composition `validated` |
+| Metrics | `src/metrics/vcr_metric.py` | `validated` |
+| Configs | `baseline_vcr_qa.yaml`, `baseline_vcr_qar.yaml` | composition `validated` |
 
-Validated VCR contract:
+VCR runtime contract:
 
-- dataset item содержит четыре QA/QAR encodings;
+- каждый sample содержит 4 candidates;
 - collate расширяет compact batch `B` в model batch `B*4`;
-- model outputs `logits` shape `[B*4, 1]`;
-- `VCRLoss` reshapes scores в `[B, 4]`;
-- Q→A и QA→R используют отдельные top-level configs;
-- Q→AR — joint metric по predictions из двух task runs, а не single default
-  training metric.
+- model возвращает один scalar score на candidate;
+- loss reshapes scores в `[B, 4]`;
+- Q->A и QA->R используют отдельные configs;
+- Q->AR считается post-hoc по paired Q->A и QA->R predictions.
 
-## Стек Только Для GQA
+VCR data пока не подготовлены локально. Real-data VCR path остаётся
+`not validated yet`, а сами данные должны обрабатываться с учётом VCR license.
+
+## Стек GQA
+
+GQA имеет два архитектурных path:
+
+1. **Runtime source-of-truth** — `GQAVQAGNNModel` с merged graph и
+   relation-aware DenseGAT bias. Запускается end-to-end против strict
+   Kaggle package. Используется `baseline_gqa.yaml` и `inference_gqa.yaml`.
+2. **Equation reference** — `PaperGQAModel` с двумя subgraphs (visual SG +
+   textual SG) и shared q-node, реализующий §4.1–§4.3 paper equations.
+   Конфиг `paper_vqa_gnn_gqa.yaml` композится только для проверки форм;
+   end-to-end runtime blocked by two-subgraph batch contract.
 
 | Слой | Файл / config | Статус |
 |---|---|---|
-| Model | `src/model/gqa_model.py::GQAVQAGNNModel` | `implemented`, `validated` |
-| Model config | `src/configs/model/vqa_gnn_gqa.yaml` | `validated` |
+| Runtime model | `src/model/gqa_model.py::GQAVQAGNNModel` | `implemented`, `validated`, `paper-aligned approximation` |
+| Equation-reference model | `src/model/paper_vqa_gnn.py::PaperGQAModel` | `implemented`, equation-shape `validated`, `not runtime-ready` |
+| Equation-reference RGAT | `src/model/paper_rgat.py::PaperMultiRelationGATLayer` | `implemented`, equation-shape `validated` |
 | Dataset | `src/datasets/gqa_dataset.py::GQADataset`, `GQADemoDataset` | `implemented`, demo `runtime-valid` |
 | Collate | `src/datasets/gqa_collate.py::gqa_collate_fn` | `validated` |
 | Loss | `src/loss/gqa_loss.py::GQALoss` | `validated`, `paper-aligned` |
 | Metric | `src/metrics/gqa_metric.py::GQAAccuracy` | `validated` |
-| Training config | `baseline_gqa.yaml` | composition `validated` |
+| Optimizer param groups | `src/optim/paper_param_groups.py` | `implemented`, `validated` |
+| Scheduler | `src/lr_schedulers/paper_warmup_cosine.py` | `implemented`, `validated` |
+| Runtime config | `baseline_gqa.yaml` (`model: vqa_gnn_gqa`) | composition `validated` |
+| Paper-reference config | `paper_vqa_gnn_gqa.yaml` (`model: paper_vqa_gnn_gqa`) | composes; not runtime-ready |
 
-Validated GQA contract:
+GQA runtime contract:
 
-- batch остаётся compact `B`, без candidate expansion;
-- config задаёт `num_answers: 1842`;
-- model outputs `logits` shape `[B, num_answers]`;
-- `GQALoss` использует hard cross-entropy по одному answer index;
-- `GQAAccuracy` использует exact match;
-- `graph_edge_types` присутствует в GQA batch contract, но пока не используется
-  в `GQAVQAGNNModel` message passing.
+- compact batch `B`, без candidate expansion;
+- `num_answers: 1842`;
+- model возвращает logits `[B, 1842]`;
+- loss — hard-label cross entropy;
+- metric — exact-match accuracy;
+- `graph_edge_types` является частью batch contract и consumed by GQA
+  relation-aware GNN path.
+
+Full strict GQA data package был собран и validated перед локальным cleanup.
+Сейчас он хранится на Kaggle, а не под локальным `data/gqa`.
 
 ## Выбор Через Hydra
 
-Task stack выбирается top-level Hydra config:
+Top-level configs выбирают task stack:
 
 ```bash
-python train.py --config-name baseline_vcr_qa
-python train.py --config-name baseline_vcr_qar
-python train.py --config-name baseline_gqa
+python train.py --config-name baseline_vcr_qa --cfg job
+python train.py --config-name baseline_vcr_qar --cfg job
+python train.py --config-name baseline_gqa --cfg job
 ```
 
-Composition audit через `--cfg job` подтвердил:
+Ожидаемые selections:
 
-- `baseline_vcr_qa` выбирает `src.model.VCRVQAGNNModel`, `VCRDemoDataset`,
-  `VCRLoss`, `VCRQAAccuracy`;
-- `baseline_vcr_qar` выбирает `src.model.VCRVQAGNNModel`, `VCRDemoDataset`
-  с `task_mode=qar`, `VCRLoss`, `VCRQARAccuracy`;
-- `baseline_gqa` выбирает `src.model.GQAVQAGNNModel`, `GQADemoDataset`,
-  `GQALoss`, `GQAAccuracy`.
+- VCR QA: `VCRVQAGNNModel`, `VCRLoss`, `VCRQAAccuracy`;
+- VCR QAR: `VCRVQAGNNModel`, `VCRLoss`, `VCRQARAccuracy`;
+- GQA: `GQAVQAGNNModel`, `GQALoss`, `GQAAccuracy`.
 
-Скрытого runtime switch внутри `VCRVQAGNNModel` или `GQAVQAGNNModel` нет.
+Скрытого task switch внутри `VCRVQAGNNModel` или `GQAVQAGNNModel` нет.
 
 ## Обратная Совместимость
 
 `src/model/vqa_gnn.py::VQAGNNModel` остаётся для старых imports и tests.
-`src/model/__init__.py` re-exports:
+Paper-aligned configs используют `VCRVQAGNNModel` или `GQAVQAGNNModel`
+напрямую.
 
-- `VCRVQAGNNModel`;
-- `GQAVQAGNNModel`;
-- `VQAGNNModel`;
-- `DenseGATLayer`;
-- `HFQuestionEncoder`.
+`src/model/__init__.py` exports:
 
-Import audit для package exports прошёл в проектном `.venv`.
+- `VCRVQAGNNModel`
+- `GQAVQAGNNModel`
+- `VQAGNNModel`
+- `DenseGATLayer`
+- `HFQuestionEncoder`
 
-## Оставшиеся Ограничения
+## Архитектурные Ограничения
 
 `paper-aligned approximation`:
 
-- dense GAT не verified как численный эквивалент paper GNN;
-- `roberta-large` — closest explicit public default, но exact paper checkpoint
-  не independently verified;
-- graph construction — offline HDF5, не on-the-fly;
-- entity linking остаётся simplified.
+- dense GAT не доказан как численно эквивалентный paper GNN;
+- relation-aware GQA attention bias — реализованный typed-edge mechanism, но не
+  independently verified equation-level match;
+- RoBERTa-large — closest explicit public default, но provenance exact paper
+  text encoder не independently verified;
+- graph construction выполняется offline в HDF5, а не on-the-fly.
 
 `not paper-faithful yet`:
 
-- GQA `graph_edge_types` не используются в message passing;
-- local `data/gqa/knowledge_graphs/*.h5` artifacts не согласованы с current GQA
-  config: graph node features имеют width `300`, `graph_edge_types` отсутствует,
-  HDF5 attrs пустые, а current config/model expects `d_kg=600`;
-- VCR real-data path локально не runnable, потому что `data/vcr/train.jsonl`
-  отсутствует;
-- real end-to-end paper numbers не получены.
-
-## Ссылки На Валидацию
-
-Подробная command matrix и runtime results находятся в
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+- VCR object references рендерятся как per-instance text identifiers, но не
+  привязаны напрямую к detector regions;
+- VCR KG construction является question-level и может не совпадать с
+  candidate-aware graph construction, если статья использовала такой вариант;
+- real paper-number runs не завершены.

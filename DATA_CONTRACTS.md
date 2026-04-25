@@ -1,340 +1,146 @@
 # Data Contracts
 
-Дата актуализации: 2026-04-20.
+Authoritative GQA data contract for the strict paper-aligned package. Runtime
+errors and config comments link back here.
 
-Цель: зафиксировать runtime contracts для real-data paths. Документ описывает,
-какие файлы, HDF5 datasets, batch keys и размерности считаются валидными для
-текущего `improved paper-aligned baseline`.
+VCR contracts are intentionally out of scope of this document while VCR data
+preparation remains open.
 
-Статус: contracts `implemented`, fail-fast checks `validated` через
-`tests/test_engineering_contracts.py`.
+## GQA Strict Package Layout
 
-## Общие Правила
-
-- Demo datasets (`VCRDemoDataset`, `GQADemoDataset`) нужны только для smoke/CI.
-  Они `runtime-valid`, но не являются paper evidence.
-- Real datasets (`VCRDataset`, `GQADataset`) читают JSON/JSONL + HDF5 и
-  проверяют shape/schema на первом HDF5 open.
-- Ошибка contract должна быть исправлена через пересборку данных или явный
-  legacy override. Silent fallback для paper-like запуска недопустим.
-- `strict_graph_schema=False` допустим только как debugging escape hatch; такой
-  запуск нельзя описывать как `paper-aligned`.
-
-## VCR Contract
-
-### Обязательные Файлы
-
-```text
-data/vcr/
-├── train.jsonl
-├── val.jsonl
-├── visual_features/
-│   ├── train_features.h5
-│   └── val_features.h5
-└── knowledge_graphs/
-    ├── train_graphs.h5
-    └── val_graphs.h5
 ```
-
-### Annotation JSONL
-
-Каждая строка должна содержать:
-
-- `annot_id`;
-- `img_fn`;
-- `question`;
-- `answer_choices` с 4 candidates;
-- `answer_label` для train/val;
-- `rationale_choices` с 4 candidates для QA→R;
-- `rationale_label` для train/val QA→R;
-- optional `objects`.
-
-### Visual HDF5
-
-Ключ: `img_fn`.
-
-Ожидаемый sample:
-
-```text
-float32[num_visual_nodes, d_visual]
-```
-
-Настройки по умолчанию:
-
-- `num_visual_nodes=36`;
-- `d_visual=2048`.
-
-### Graph HDF5
-
-Ключ: `annot_id`.
-
-Обязательные datasets в каждой group:
-
-```text
-node_features  float32[N_kg_actual, d_kg]
-adj_matrix     float32[N_total, N_total]
-node_types     int32/int64[N_total]
-```
-
-Где:
-
-```text
-N_total = num_visual_nodes + 1 + max_kg_nodes
-```
-
-Настройки по умолчанию:
-
-- `d_kg=300`;
-- `max_kg_nodes=30`.
-
-### VCR Batch Keys
-
-`VCRDataset` + `make_vcr_collate_fn` создают:
-
-- `visual_features`;
-- `qa_input_ids`, `qa_attention_mask`;
-- `qar_input_ids`, `qar_attention_mask`;
-- `graph_node_features`;
-- `graph_adj`;
-- `graph_node_types`;
-- `answer_label`;
-- `rationale_label`;
-- `annot_ids` (persisted by inferencer as `sample_id` для post-hoc join).
-
-VCR model output — один scalar score на candidate. Это `candidate scoring`, а
-не answer-vocabulary classification.
-
-Object mentions в question/answers/rationale проходят через
-`_vcr_object_mention`, который рендерит per-instance identifiers
-(`person0`, `person2`). Это disambiguates same-category references
-(два "person" не сливаются в одну строку), но не привязывает упоминания
-к region detector features напрямую.
-
-## GQA Contract
-
-### Обязательные Файлы
-
-```text
 data/gqa/
 ├── gqa_answer_vocab.json
+├── gqa_relation_vocab.json
 ├── questions/
 │   ├── train_balanced_questions.json
 │   └── val_balanced_questions.json
 ├── visual_features/
 │   ├── train_features.h5
 │   └── val_features.h5
-└── knowledge_graphs/
-    ├── train_graphs.h5
-    └── val_graphs.h5
+├── knowledge_graphs/
+│   ├── train_graphs.h5
+│   └── val_graphs.h5
+└── metadata/
+    ├── train_visual_features_metadata.json
+    ├── val_visual_features_metadata.json
+    ├── train_knowledge_graphs_metadata.json
+    └── val_knowledge_graphs_metadata.json
 ```
 
-### Answer Vocabulary
+## Validated Contract Values
 
-`gqa_answer_vocab.json` должен содержать:
+| Field | Value | Source |
+|---|---|---|
+| `answer_to_idx` size | `1842` | `gqa_answer_vocab.json` |
+| `relation_count_total` | `624` (= 4 specials + 2 × 310 predicates) | `gqa_relation_vocab.json` |
+| visual feature shape | `float32[100, 2048]` | `*_features.h5` per imageId |
+| graph `node_features` last dim | `600` (= 2 × 300d GloVe: name + attributes) | `*_graphs.h5` per question_id |
+| graph attrs `d_kg` | `600` | `*_graphs.h5` file attrs |
+| graph attrs `num_visual_nodes` | `100` | `*_graphs.h5` file attrs |
+| graph attrs `max_kg_nodes` | `100` | `*_graphs.h5` file attrs |
+| graph attrs `graph_edge_type_count` | `624` | `*_graphs.h5` file attrs |
+| graph attrs `graph_mode` | `"official_scene_graph"` | `*_graphs.h5` file attrs |
+| graph attrs `conceptnet_used` | `False` | `*_graphs.h5` file attrs |
+| graph attrs `fully_connected_fallback_used` | `False` | `*_graphs.h5` file attrs |
 
-- `answer_to_idx`;
-- `idx_to_answer`;
-- optional `metadata`.
+The strict package was validated by `scripts/validate_gqa_data.py
+--skip-runtime-check` with `0` errors before being uploaded to Kaggle.
+Local payloads were intentionally removed after upload; restoring the
+private Kaggle dataset is required for runtime validation and training.
 
-Paper target:
+## Runtime Batch Contract (`GQADataset` → `gqa_collate_fn`)
 
-```text
-num_answers = 1842
-```
+| Key | Type / Shape | Notes |
+|---|---|---|
+| `visual_features` | `float32[B, 100, 2048]` | object features |
+| `question_input_ids` | `long[B, max_question_len]` | RoBERTa-large tokens |
+| `question_attention_mask` | `long[B, max_question_len]` | |
+| `graph_node_features` | `float32[B, 100, 600]` | textual scene-graph nodes |
+| `graph_adj` | `float32[B, 201, 201]` | symmetric, with self-loops |
+| `graph_edge_types` | `long[B, 201, 201]` | ids in `[0, 624)` |
+| `graph_node_types` | `long[B, 201]` | `0=visual`, `1=question`, `2=kg` |
+| `labels` | `long[B]` | answer indices in `[0, 1842)` |
+| `question_id` | `list[str]` | metadata only |
 
-Текущий `baseline_gqa.yaml` задаёт `num_answers=1842`.
+`N_total = num_visual_nodes + 1 + max_kg_nodes = 201`.
 
-### Question JSON
+## Source-of-Truth Model Path (Runtime)
 
-Каждый question item должен содержать:
+| Layer | Class / file | Status |
+|---|---|---|
+| Model | `src/model/gqa_model.py::GQAVQAGNNModel` | runtime source-of-truth |
+| Loss | `src/loss/gqa_loss.py::GQALoss` | hard cross-entropy |
+| Metric | `src/metrics/gqa_metric.py::GQAAccuracy` | exact-match |
+| Dataset | `src/datasets/gqa_dataset.py::GQADataset` | strict mode |
+| Collate | `src/datasets/gqa_collate.py::gqa_collate_fn` | |
+| Hydra config | `src/configs/baseline_gqa.yaml` | |
 
-- `question`;
-- `imageId`;
-- `answer` для train/val.
+`GQAVQAGNNModel` consumes `graph_edge_types` through every
+`DenseGATLayer` (relation-aware attention bias) when `num_relations > 0`.
+Setting `num_relations = 0` reverts to untyped GAT (ablation only,
+`not paper-faithful yet`).
 
-### Visual HDF5
+## Equation-Level Paper Path (NOT Runtime)
 
-Ключ: `imageId`.
+| Layer | Class / file | Status |
+|---|---|---|
+| Model | `src/model/paper_vqa_gnn.py::PaperGQAModel` | equation reference |
+| RGAT layer | `src/model/paper_rgat.py::PaperMultiRelationGATLayer` | paper Eqs 1–6 |
+| Hydra config | `src/configs/paper_vqa_gnn_gqa.yaml` | composes only; not runnable |
 
-Paper-like expected sample:
+`PaperGQAModel` requires a two-subgraph batch (visual SG + textual SG with
+a shared q-node index). The current `GQADataset` emits a single merged
+graph, so this path is `blocked by external artifact / preprocessing`
+work. Tests cover its equation-level shape via mocked tensors only.
 
-```text
-float32[100, 2048]
-```
+## Strict Toggles in `GQADataset`
 
-Optional file attrs проверяются, если присутствуют:
+`GQADataset.expect_graph_edge_types: bool = True`
+- `True` (default, paper-aligned): graph HDF5 must carry `graph_edge_types`.
+- `False`: explicitly accept legacy untyped artifacts; edge types are
+  zero-filled and the run is logged as `not paper-faithful yet`.
 
-- `num_boxes`;
-- `feature_dim`.
+`GQADataset.strict_graph_schema: bool = True`
+- `True` (default): probe the first graph entry on first HDF5 open and
+  fail fast on `d_kg` mismatch / missing required datasets / missing
+  `graph_edge_types` (when expected).
+- `False`: skip the probe (debug only). The underlying tensor copy still
+  raises later; this toggle does not silently hide mismatches.
 
-### Graph HDF5
+Both toggles are exposed via `src/configs/datasets/gqa.yaml` and
+`src/configs/datasets/gqa_eval.yaml`.
 
-Ключ: GQA `question_id`.
+## Runtime Validation Commands
 
-Paper-like required datasets в каждой group:
-
-```text
-node_features     float32[N_textual_nodes, d_kg]
-adj_matrix        float32[N_total, N_total]
-node_types        int32/int64[N_total]
-graph_edge_types  int32/int64[N_total, N_total]
-```
-
-Default paper-like config:
-
-```text
-d_kg = 600
-num_visual_nodes = 100
-max_kg_nodes = 100
-N_total = 201
-```
-
-Рекомендуемые file attrs:
-
-- `d_kg`;
-- `num_visual_nodes`;
-- `max_kg_nodes`;
-- `graph_mode=official_scene_graph`;
-- `conceptnet_used=False`;
-- `graph_edge_type_count`.
-
-Если attrs присутствуют и не совпадают с config, `GQADataset` поднимает
-`ValueError` до продолжения training.
-
-### Relation-Aware GNN Contract (GQA)
-
-`GQAVQAGNNModel` теперь consumes `graph_edge_types` в каждом dense GAT
-слое. Требования:
-
-- `graph_edge_types` должен присутствовать в batch и в
-  `inferencer.device_tensors`.
-- Все значения `graph_edge_types` должны быть в диапазоне
-  `[0, model.num_relations)`. Out-of-range values поднимают явный
-  `ValueError` в `DenseGATLayer.forward`.
-- `model.num_relations` (default `512`) — safe upper bound. После
-  пересборки graph artifacts значение можно свести к фактическому
-  `relation_count_total` из `gqa_relation_vocab.json`.
-- VCR model конструируется с `num_relations=0` и не использует
-  `graph_edge_types` — это backward-compatible untyped путь.
-
-### GQA Batch Keys
-
-`GQADataset` + `gqa_collate_fn` создают:
-
-- `visual_features`;
-- `question_input_ids`;
-- `question_attention_mask`;
-- `graph_node_features`;
-- `graph_adj`;
-- `graph_edge_types` (consumed by relation-aware GAT);
-- `graph_node_types`;
-- `labels`;
-- `question_id` (persisted by inferencer as `sample_id` для post-hoc join).
-
-GQA model output — `[B, num_answers]`. Это `1842-way classification`, а не
-candidate scoring.
-
-## Текущая Находка По Local GQA Artifacts
-
-Во время аудита наблюдалось:
-
-```text
-data/gqa/gqa_answer_vocab.json: 1842 answers
-data/gqa/visual_features/train_features.h5: sample shape (100, 2048)
-data/gqa/knowledge_graphs/train_graphs.h5: sample node_features (2, 300)
-data/gqa/knowledge_graphs/train_graphs.h5: no graph_edge_types
-data/gqa/knowledge_graphs/train_graphs.h5: empty file attrs
-```
-
-Текущий strict GQA config ожидает `d_kg=600` и `graph_edge_types`. Поэтому
-real-data startup намеренно падает:
-
-```text
-ValueError: [GQA data contract] ... node_features with d_kg=300, but dataset config requests d_kg=600.
-```
-
-Классификация:
-
-- `blocked by data`, пока artifacts не пересобраны с typed scene-graph edges
-  (`d_kg=600`, `graph_edge_types`, attrs).
-
-## Варианты Исправления GQA
-
-### Paper-Like Fix
-
-Пересобрать graphs текущим scene-graph preprocessing path:
+After restoring the strict GQA Kaggle package into `data/gqa`:
 
 ```bash
-python scripts/prepare_gqa_data.py prepare-all \
-  --train-questions data/raw/gqa/questions/train_balanced_questions.json \
-  --val-questions data/raw/gqa/questions/val_balanced_questions.json \
-  --scene-graphs data/raw/gqa/train_sceneGraphs.json data/raw/gqa/val_sceneGraphs.json \
-  --glove data/raw/glove/glove.840B.300d.txt \
-  --raw-features data/raw/gqa/objects \
-  --info-json data/raw/gqa/gqa_objects_info.json \
-  --processed-dir data/gqa
-```
-
-Если остальные artifacts уже валидны, можно пересобрать только graph artifacts:
-
-```bash
-python scripts/prepare_gqa_data.py knowledge-graphs \
-  --questions-json data/raw/gqa/questions/train_balanced_questions.json \
-  --scene-graphs data/raw/gqa/train_sceneGraphs.json data/raw/gqa/val_sceneGraphs.json \
-  --glove data/raw/glove/glove.840B.300d.txt \
-  --raw-features data/raw/gqa/objects \
-  --info-json data/raw/gqa/gqa_objects_info.json \
-  --relation-vocab data/gqa/gqa_relation_vocab.json \
-  --output data/gqa/knowledge_graphs/train_graphs.h5 \
-  --d-kg 600
-```
-
-Повторите graph-only команду для `val_balanced_questions.json` и
-`data/gqa/knowledge_graphs/val_graphs.h5`.
-
-Затем провалидируйте:
-
-```bash
-python scripts/validate_gqa_data.py \
+.venv/bin/python scripts/validate_gqa_data.py \
   --data-dir data/gqa \
   --answer-vocab data/gqa/gqa_answer_vocab.json \
-  --text-encoder data/roberta-large
+  --relation-vocab data/gqa/gqa_relation_vocab.json \
+  --split train val \
+  --num-visual-nodes 100 \
+  --feature-dim 2048 \
+  --d-kg 600 \
+  --max-kg-nodes 100 \
+  --num-answers 1842 \
+  --require-metadata
 ```
 
-### Legacy Debug Run
+The runtime check now exercises `GQAVQAGNNModel` with the relation vocab
+size taken from `gqa_relation_vocab.json`, so it covers the same
+relation-aware GNN path the trainer uses.
 
-Чтобы исследовать старые локальные artifacts без claims о paper-faithfulness,
-нужно явно согласовать dimensions и разрешить отсутствующие edge types:
+## Known Approximations vs Paper
 
-```bash
-python train.py --config-name baseline_gqa \
-  datasets=gqa \
-  model.d_kg=300 \
-  datasets.train.d_kg=300 \
-  datasets.val.d_kg=300 \
-  datasets.train.expect_graph_edge_types=False \
-  datasets.val.expect_graph_edge_types=False
-```
+These are deliberate, documented approximations — `paper-aligned approximation`,
+not `paper-faithful`:
 
-Такой запуск остаётся `not paper-faithful yet`, потому что typed scene-graph
-relations отсутствуют.
-
-## Команды Валидации
-
-Engineering contracts покрываются:
-
-```bash
-.venv/bin/python -m pytest tests/test_engineering_contracts.py -q
-```
-
-Полный local test suite на момент аудита:
-
-```bash
-.venv/bin/python -m pytest -q
-```
-
-Проверенный результат:
-
-```text
-81 passed
-```
+- merged-graph `GQAVQAGNNModel` instead of two-subgraph `PaperGQAModel`;
+- dense GAT + per-(head, relation) attention bias instead of the paper's
+  full RGAT message passing;
+- offline pre-built scene-graph HDF5 instead of on-the-fly construction;
+- entity linking via tokenization rather than NER / entity-linking;
+- RoBERTa-large as closest public default text encoder.
