@@ -16,11 +16,14 @@ Validated или implemented:
 - GQA relation-aware message passing с `graph_edge_types`: `implemented`,
   `validated`, `paper-aligned approximation`. Runtime model
   `num_relations=624` совпадает с validated relation vocab пакета.
-- Strict GQA preprocessing package: `validated`, uploaded to Kaggle, removed
-  locally после upload.
-- GQA paper-equation reference path (`PaperGQAModel`,
-  `PaperMultiRelationGATLayer`): `implemented`, equation-shape `validated`.
-  Runtime запуск blocked by two-subgraph batch contract — `not runtime-ready`.
+- Strict GQA preprocessing package: `validated`, uploaded to Kaggle, затем
+  validated end-to-end against real Kaggle data after restore.
+- GQA paper-equation path (`PaperGQAModel`, `PaperMultiRelationGATLayer`):
+  `implemented`, `validated` end-to-end via
+  `GQADataset(emit_two_subgraphs=True)` + `gqa_paper_collate_fn`. Slice
+  out of merged HDF5 statically lossless (no visual↔textual cross-edges
+  by construction). Configs `paper_vqa_gnn_gqa.yaml` и
+  `inference_paper_gqa.yaml` runnable.
 - GQA training-protocol primitives (`paper_param_groups`,
   `PaperWarmupCosine`): `implemented`, `validated`.
 - VCR candidate scoring для Q->A и QA->R: `implemented`, `validated`.
@@ -36,21 +39,27 @@ Validated или implemented:
 ## Состояние GQA Data
 
 GQA data layer больше не blocked by legacy local artifacts. Strict paper-target
-package был собран и validated перед cleanup.
+package был собран, uploaded to Kaggle и затем validated end-to-end against
+real Kaggle data after restore.
 
 Validated свойства strict package:
 
 | Contract | Статус |
 |---|---|
 | `answer_to_idx` существует | `validated` |
-| answer vocab size равен `1842` | `validated` |
+| answer vocab size равен `1842`, contiguous, coverage 100% | `validated` |
 | relation vocab существует | `validated` |
-| relation count равен `624` | `validated` |
-| visual features имеют форму `float32[100, 2048]` | `validated` |
+| relation count равен `624` (310 predicates + 4 specials), contiguous | `validated` |
+| train split: 943,000 questions, 72,140 images, full image coverage | `validated` |
+| val split: 132,062 questions, 10,234 images, full image coverage | `validated` |
+| visual features имеют форму `float32[100, 2048]`, attrs `num_boxes=100`, `feature_dim=2048` | `validated` |
 | graph datasets включают `graph_edge_types` | `validated` |
 | graph `node_features.shape[-1] == 600` | `validated` |
-| graph attrs включают `d_kg=600`, `graph_edge_type_count=624` | `validated` |
-| metadata package существует и проходит validator | `validated` |
+| graph attrs включают `d_kg=600`, `num_visual_nodes=100`, `max_kg_nodes=100`, `graph_edge_type_count=624` | `validated` |
+| `graph_mode=official_scene_graph`, `conceptnet_used=False`, `fully_connected_fallback_used=False` | `validated` |
+| sampled graphs schema-consistent, без fully-connected visual fallback | `validated` |
+| metadata package существует и проходит validator; no-match rate ~9.5% train / ~9.6% val | `validated` |
+| runtime path `GQADataset -> gqa_collate_fn -> GQAVQAGNNModel(num_relations=624) -> GQALoss -> GQAAccuracy` | `validated` |
 
 Состояние хранения:
 
@@ -59,16 +68,28 @@ Validated свойства strict package:
   mini/debug payloads были намеренно удалены;
 - local GQA runs требуют сначала восстановить private Kaggle package.
 
+Runtime validation sanity:
+
+- logits shape `(1, 1842)`;
+- finite loss `7.326373`, close to `ln(1842)=7.519` for random-init model;
+- metric finite;
+- Roberta load warnings about `lm_head.*` and `pooler.dense.*` are expected:
+  `HFQuestionEncoder` uses CLS from `last_hidden_state`, not LM head/pooler.
+
 Оставшиеся GQA gaps:
 
 | Gap | Статус | Классификация |
 |---|---|---|
-| Real GQA training/eval numbers | `not validated yet` | `future work`, out of scope this phase |
-| Two-subgraph paper batch contract (visual SG + textual SG, q-node index) для `PaperGQAModel` | `paper-aligned approximation` | `blocked by external artifact / preprocessing` |
-| Exact paper optimizer/schedule parity (warmup length для GQA, batch size, dropout, seed N-runs) | `paper-aligned approximation` | `blocked by missing paper detail` |
-| Local availability full GQA package | intentionally absent | restore from Kaggle when needed |
+| Real GQA training/eval numbers | `not validated yet` | `future work` (paper numbers, ожидает обучения) |
+| Exact paper warmup length для GQA, batch size, dropout, max seq len, grad accumulation, seed N-runs | `paper-aligned approximation` | `blocked by missing paper detail` |
+| Hidden widths / activations внутри `f_r`, `f_h` MLPs, число attention heads (Eq 5 со scalar gamma) | `paper-aligned approximation` | `blocked by missing paper detail` |
+| Visual SG vs textual SG: общий или раздельные relation vocabs | `paper-aligned approximation` | `blocked by missing paper detail` (используем общий 624) |
+| Entity linking via tokenization vs NER | `paper-aligned approximation` | `blocked by missing paper detail` |
+| Exact RoBERTa-large checkpoint provenance | `paper-aligned approximation` | `blocked by missing paper detail` |
+| Local availability full GQA package | optional / may be absent | restore from Kaggle when needed |
 
-GQA path является `closed for current phase`. См. `GQA_CLOSURE_REPORT.md`.
+Все engineering-gaps по GQA закрыты. Оставшееся — paper underspec и
+реальные числа обучения. См. `GQA_CLOSURE_REPORT.md`.
 
 ## VCR Gaps
 
@@ -137,7 +158,7 @@ VCR data должны оставаться private на Kaggle.
 Безопасная формулировка:
 
 ```text
-GQA strict data package validated и uploaded to Kaggle, но real paper numbers
-not validated. VCR data preparation остаётся открытой. Репозиторий является
-partially validated baseline, а не paper reproduction.
+GQA strict data package validated end-to-end against real Kaggle data, но real
+paper numbers not validated. VCR data preparation остаётся открытой.
+Репозиторий является partially validated baseline, а не paper reproduction.
 ```

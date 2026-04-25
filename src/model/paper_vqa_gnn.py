@@ -3,10 +3,10 @@ Paper-equation VQA-GNN model (arXiv:2205.11501, §4.1-§4.3).
 
 Implements the bidirectional-fusion architecture with two modality-specialized
 GNNs, explicit super nodes (z, p for VCR; z = q for GQA), and the paper's
-concat-based readout (Eq 8). The module is architecture-only: it cannot be run
-end-to-end on local data because data-contract changes required by the two-
-subgraph structure is not available without external artifacts
-(see BLOCKED_EXACTNESS_ITEMS.md §A.1-A.7 and §B.1).
+concat-based readout (Eq 8). For GQA, the two-subgraph batch contract is
+runnable via `GQADataset(emit_two_subgraphs=True)`. For VCR, the paper-equation
+path still requires split scene/concept graph artifacts and is not the current
+runtime path (see `GAP_ANALYSIS.md`).
 
 Paper equations mapped to code:
 
@@ -25,15 +25,14 @@ Two public classes:
     PaperGQAModel: GQA classification head. Expects single super node q
         (context from RoBERTa). Final head is R^{3D} -> R^{num_answers}.
 
-Items the caller must satisfy before running (see
-BLOCKED_EXACTNESS_ITEMS.md for each):
+Items the caller must satisfy before running:
 
     * the dataset must emit `scene_subgraph_mask`, `concept_subgraph_mask`,
-      and super-node indices (z, p, q). This repo's current datasets do NOT
-      emit these fields; `PaperVCRModel / PaperGQAModel` raises if called on the legacy
-      batch contract.
-    * for VCR, p-node features require VinVL (EA §A.2).
-    * for both tasks, proper relation vocabularies are required (EA §A.1, A.6).
+      and super-node indices (z, p, q). GQA emits this via
+      `emit_two_subgraphs=True`; VCR does not yet emit the paper-equation
+      split graph contract.
+    * for VCR, p-node features require VinVL-style assets.
+    * for both tasks, proper relation vocabularies are required.
 """
 
 from __future__ import annotations

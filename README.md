@@ -31,33 +31,43 @@ status report.
 
 GQA:
 
-- Полный paper-target препроцессинг GQA был завершён и strict-validated
-  локально.
+- Полный paper-target препроцессинг GQA был завершён, strict-validated
+  локально, uploaded to Kaggle, затем validated end-to-end against real Kaggle
+  data after restore.
 - Валидированный GQA package был загружен на Kaggle командой:
 
 ```bash
 kaggle datasets create -p kaggle_staging/gqa-gnn-data --dir-mode zip
 ```
 
-- После upload локальные full GQA processed/raw/staging payloads были
-  намеренно удалены, чтобы освободить место.
-- Поэтому локальный `data/gqa` сейчас не обязан существовать.
+- После upload локальные full GQA processed/raw/staging payloads могут быть
+  удалены, чтобы освободить место.
+- Поэтому локальный `data/gqa` может не существовать между фазами.
 - Для локальной работы с GQA нужно восстановить private Kaggle dataset в
   ожидаемый layout `data/gqa` или указать Hydra `datasets.*.data_dir` на
   восстановленный путь.
 
-Validated GQA data contract до cleanup:
+Validated GQA data/runtime contract:
 
-- `answer_to_idx` существовал и содержал `1842` entries.
-- relation vocab существовал и содержал `624` relation ids.
+- `answer_to_idx` содержит `1842` entries, contiguous, coverage 100%.
+- relation vocab содержит `624` relation ids: 310 predicates + 4 specials,
+  contiguous.
+- train split: 943,000 questions, 72,140 images, all imageIds covered.
+- val split: 132,062 questions, 10,234 images, all imageIds covered.
 - train/val visual HDF5 samples имели форму `float32[100, 2048]`.
 - train/val graph HDF5 содержали `node_features`, `adj_matrix`, `node_types`,
   `graph_edge_types`.
 - graph `node_features.shape[-1] == 600`.
 - graph attrs включали `d_kg=600`, `num_visual_nodes=100`,
   `max_kg_nodes=100`, `graph_edge_type_count=624`,
-  `graph_mode=official_scene_graph`, `conceptnet_used=False`.
-- `scripts/validate_gqa_data.py --skip-runtime-check` прошёл с `0` errors.
+  `graph_mode=official_scene_graph`, `conceptnet_used=False`,
+  `fully_connected_fallback_used=False`.
+- sampled graphs schema-consistent, без fully-connected visual fallback.
+- metadata files present; no-match rate ~9.5% train / ~9.6% val.
+- runtime path validated:
+  `GQADataset -> gqa_collate_fn -> GQAVQAGNNModel(num_relations=624) -> GQALoss -> GQAAccuracy`.
+- runtime sanity: logits `(1, 1842)`, finite loss `7.326373`, finite metric;
+  random-init loss close to `ln(1842)=7.519`.
 
 VCR:
 
@@ -84,20 +94,31 @@ data/vcr/
 | VCR Q->A candidate scoring | `implemented`, `validated` |
 | VCR QA->R candidate scoring | `implemented`, `validated` |
 | VCR Q->AR post-hoc evaluator | `implemented`, `validated` |
-| GQA 1842-way classification | `implemented`, `validated` |
+| GQA 1842-way classification (fast path, `GQAVQAGNNModel`) | `implemented`, `validated`, `paper-aligned approximation` |
+| GQA paper-equation path (`PaperGQAModel`, two-subgraph batch) | `implemented`, `validated` end-to-end |
 | GQA relation-aware message passing по `graph_edge_types` | `implemented`, `validated`, `paper-aligned approximation` |
 | Общие GNN/text primitives | `implemented`, `validated` |
 | Demo datasets и smoke paths | `runtime-valid` |
-| Full strict GQA data package | `validated`, uploaded to Kaggle, removed locally |
+| Full strict GQA data package | `validated` end-to-end against real Kaggle data |
 | Full VCR data package | `not validated yet` |
 
 Основные entry points:
 
-- `train.py`
-- `inference.py`
+- `train.py` (configs: `baseline_gqa`, `paper_vqa_gnn_gqa`, `baseline_vcr_qa`, `baseline_vcr_qar`)
+- `inference.py` (configs: `inference_gqa`, `inference_paper_gqa`, `inference_vcr`)
 - `scripts/validate_gqa_data.py`
 - `scripts/validate_vcr_data.py`
 - `scripts/stage_vcr_for_kaggle.sh`
+
+Для GQA paper-equation training с реальными данными:
+
+```bash
+python train.py --config-name paper_vqa_gnn_gqa datasets=gqa_paper \
+  datasets.train.data_dir=data/gqa \
+  datasets.train.answer_vocab_path=data/gqa/gqa_answer_vocab.json \
+  datasets.val.data_dir=data/gqa \
+  datasets.val.answer_vocab_path=data/gqa/gqa_answer_vocab.json
+```
 
 ## Команды Проверки
 
@@ -126,8 +147,7 @@ Strict GQA data validation после восстановления private Kaggl
   --d-kg 600 \
   --max-kg-nodes 100 \
   --num-answers 1842 \
-  --require-metadata \
-  --skip-runtime-check
+  --require-metadata
 ```
 
 VCR validation после подготовки лицензированных VCR assets:
@@ -176,6 +196,6 @@ visibility остаётся private.
 partially validated baseline: architecture split, task contracts,
 relation-aware GQA model path, strict GQA data package, validators и
 demo/runtime checks реализованы или validated как задокументировано. GQA data
-prepared and uploaded to Kaggle; local full GQA payloads были намеренно удалены.
-VCR data preparation остаётся открытой задачей.
+validated end-to-end against real Kaggle data; VCR data preparation остаётся
+открытой задачей. Paper numbers не воспроизведены.
 ```

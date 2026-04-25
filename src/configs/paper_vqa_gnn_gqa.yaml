@@ -1,13 +1,18 @@
-# Paper-protocol GQA config for arXiv:2205.11501 audit.
+# Paper-protocol GQA config for arXiv:2205.11501 (§4.1-§4.3, §5.1 GQA).
 #
-# Status: `not paper-faithful yet` for end-to-end runtime because current GQA
-# artifacts do not emit separate visual/textual SG subgraphs with q-node ids.
+# Status: end-to-end runnable. `GQADataset(emit_two_subgraphs=True)` slices
+# the strict merged-graph artifacts into the (visual SG + q, textual SG + q)
+# batch contract `PaperGQAModel` expects. The slice is statically lossless
+# (gqa_preprocessing.py never writes visual↔textual cross-edges).
+#
+# Defaults switch to `gqa_paper_demo` for smoke testing; real training:
+#   python train.py --config-name paper_vqa_gnn_gqa datasets=gqa_paper
 
 defaults:
   - model: paper_vqa_gnn_gqa
   - writer: cometml
   - metrics: gqa
-  - datasets: gqa_demo
+  - datasets: gqa_paper_demo
   - dataloader: gqa
   - transforms: vqa
   - _self_
@@ -41,6 +46,9 @@ trainer:
   progress_bar: on
   n_epochs: 50
   epoch_len: 5000
+  # Paper-batch contract for `PaperGQAModel`. Keys must stay in sync with
+  # `gqa_paper_collate_fn` (src/datasets/gqa_collate.py::PAPER_TENSOR_KEYS)
+  # and `PaperGQAModel.forward` arguments.
   device_tensors:
     - "question_input_ids"
     - "question_attention_mask"

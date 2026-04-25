@@ -5,8 +5,9 @@ This module implements the equations printed in the paper verbatim. It is kept
 separate from `src.model.gnn_core.DenseGATLayer` deliberately: the legacy dense
 GAT is an engineering variant that corresponds to the paper's Ablation 2 / 1
 (single GNN, no explicit multi-relation message concatenation), whereas
-`PaperMultiRelationGATLayer` matches §4.2 Eqs 1-6 and is the only `paper-aligned`
-RGAT layer in this repository (see PAPER_PARITY_MATRIX.md §2).
+`PaperMultiRelationGATLayer` matches §4.2 Eqs 1-6 and is the paper-equation
+RGAT layer in this repository (see `DATA_CONTRACTS.md` and
+`GQA_CLOSURE_REPORT.md` for current status).
 
 Paper equations (verbatim symbol mapping):
 
@@ -17,7 +18,7 @@ Paper equations (verbatim symbol mapping):
     (5) gamma_ij = q_i^T k_j / sqrt(D)
     (6) alpha_ij = softmax_j(gamma_ij)
 
-Known paper underspecifications (tracked in BLOCKED_EXACTNESS_ITEMS.md §B.3-B.6):
+Known paper underspecifications (tracked in `GAP_ANALYSIS.md`):
 
     * number of attention heads (paper Eq 5 is written with scalar gamma_ij, so
       this layer uses **single-head** attention as the most literal reading);

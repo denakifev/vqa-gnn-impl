@@ -1,0 +1,28 @@
+# Synthetic two-subgraph GQA demo for `PaperGQAModel` smoke testing.
+# DOES NOT reproduce any paper result. The synthetic merged graph respects
+# the preprocessing invariant (no visual↔textual cross-edges), so the
+# slicer is exercised on the same shape contract as real data.
+
+train:
+  _target_: src.datasets.GQADemoDataset
+  num_samples: 32
+  num_answers: 1842
+  max_question_len: 30
+  num_visual_nodes: 100
+  max_kg_nodes: 100
+  d_visual: 2048
+  d_kg: 600
+  seed: 42
+  emit_two_subgraphs: True
+
+val:
+  _target_: src.datasets.GQADemoDataset
+  num_samples: 16
+  num_answers: 1842
+  max_question_len: 30
+  num_visual_nodes: 100
+  max_kg_nodes: 100
+  d_visual: 2048
+  d_kg: 600
+  seed: 0
+  emit_two_subgraphs: True

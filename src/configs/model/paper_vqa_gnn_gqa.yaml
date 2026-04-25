@@ -2,22 +2,20 @@ _target_: src.model.PaperGQAModel
 
 # Paper-equation GQA architecture path (arXiv:2205.11501 §4.1-§4.3, §5.1 GQA).
 #
-# STATUS: equation reference, NOT the runtime source-of-truth.
+# Runtime status: end-to-end runnable via the two-subgraph batch contract
+# emitted by `GQADataset(emit_two_subgraphs=True)` and stacked by
+# `gqa_paper_collate_fn`. Used by `paper_vqa_gnn_gqa.yaml` (training) and
+# `inference_paper_gqa.yaml` (inference).
 #
-# Runtime source-of-truth for paper-aligned GQA training/evaluation against
-# the strict GQA package is `src/configs/model/vqa_gnn_gqa.yaml`
-# (`GQAVQAGNNModel` — single merged graph + relation-aware DenseGAT bias).
-#
-# This config composes but is NOT runnable end-to-end against the current
-# `GQADataset` batch contract. PaperGQAModel.forward() requires a
-# two-subgraph batch (visual SG + textual SG with a shared q-node index),
-# which the current preprocessing does not emit. Materialising it would
-# require new preprocessing + a new dataset / collate path; that work is
-# tracked as `blocked by external artifact` in GQA_CLOSURE_REPORT.md.
-#
-# Use this config to verify equation-level shapes in tests
-# (tests/test_paper_vqa_gnn_model.py, tests/test_paper_rgat.py), not for
-# Hydra training/inference runs.
+# Pair vs. `vqa_gnn_gqa.yaml` (`GQAVQAGNNModel`):
+#   - `GQAVQAGNNModel`: merged graph + relation-aware DenseGAT bias.
+#     Faster, paper-aligned approximation. Default runtime path
+#     (baseline_gqa.yaml).
+#   - `PaperGQAModel` (this config): two-subgraph layout with
+#     `PaperMultiRelationGATLayer` (paper Eqs 1-6) and concat readout
+#     (Eqs 7-9). Equation-faithful; numerically slower per epoch.
+# Use whichever the experiment requires; both consume the same strict
+# GQA package on disk.
 
 d_visual: 2048
 
@@ -30,10 +28,14 @@ d_hidden: 1024
 # document this as not paper-faithful yet until confirmed.
 num_gnn_layers: 5
 
-# Must be replaced by exact relation_count_total after rebuilding paper-path
-# graph artifacts.
-num_relations_visual: 64
-num_relations_textual: 64
+# Paper does not specify whether visual SG and textual SG share or split
+# the relation vocabulary. We use the single shared vocabulary produced by
+# `scripts/prepare_gqa_data.py relation-vocab` (relation_count_total=624 in
+# the validated strict package: 4 specials + 2 × 310 predicates). Each
+# `PaperMultiRelationGATLayer` validates that incoming edge ids are
+# strictly less than its own `num_relations`, so both must cover 624.
+num_relations_visual: 624
+num_relations_textual: 624
 
 # Paper §5.1 GQA: 1,842 answer classes.
 num_answers: 1842

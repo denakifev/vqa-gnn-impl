@@ -12,7 +12,7 @@ Natural literal reading:
     * cosine decay from peak LR to 0 over the remaining
       `total_steps - warmup_steps` steps.
 
-Known underspecifications (see BLOCKED_EXACTNESS_ITEMS.md §C.6, §C.7):
+Known underspecifications (see `GAP_ANALYSIS.md`):
     * the paper says "linear" for warmup — we take that literally;
     * the GQA block of §5.1 does not restate the warmup/cosine schedule,
       so using this class for GQA assumes the VCR schedule transfers directly.

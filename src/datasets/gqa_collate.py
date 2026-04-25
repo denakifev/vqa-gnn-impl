@@ -12,6 +12,40 @@ just standard tensor stacking.
 import torch
 
 
+PAPER_TENSOR_KEYS = (
+    "question_input_ids",
+    "question_attention_mask",
+    "visual_node_features",
+    "visual_adj",
+    "visual_edge_types",
+    "visual_node_types",
+    "visual_node_is_q_index",
+    "textual_node_features",
+    "textual_adj",
+    "textual_edge_types",
+    "textual_node_types",
+    "textual_node_is_q_index",
+    "labels",
+)
+
+
+def gqa_paper_collate_fn(dataset_items: list) -> dict:
+    """
+    Collate items emitted by `GQADataset(emit_two_subgraphs=True)` /
+    `GQADemoDataset(emit_two_subgraphs=True)` into the batch format
+    consumed by `src.model.PaperGQAModel`.
+
+    Each per-item tensor field has a fixed shape (the slicer pads visual
+    and textual subgraphs to `num_visual_nodes + 1` and `max_kg_nodes + 1`
+    respectively), so plain `torch.stack` is sufficient.
+    """
+    batch = {}
+    for key in PAPER_TENSOR_KEYS:
+        batch[key] = torch.stack([item[key] for item in dataset_items])
+    batch["question_id"] = [item["question_id"] for item in dataset_items]
+    return batch
+
+
 def gqa_collate_fn(dataset_items: list) -> dict:
     """
     Collate a list of GQA dataset items into a batch.

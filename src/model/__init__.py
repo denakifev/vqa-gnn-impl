@@ -9,8 +9,8 @@ __all__ = [
     # Paper-aligned task-specific models (use these in training configs)
     "VCRVQAGNNModel",   # VCR Q→A and QA→R: candidate scoring (output dim=1)
     "GQAVQAGNNModel",   # GQA: answer vocabulary classification (output dim=num_answers)
-    # Paper-equation modules. Architecture-only until paper-path data artifacts
-    # are rebuilt; see PAPER_PARITY_MATRIX.md and BLOCKED_EXACTNESS_ITEMS.md.
+    # Paper-equation modules. GQA is runnable via the two-subgraph dataset
+    # contract; VCR still needs paper-path data artifacts.
     "PaperMultiRelationGATLayer",
     "PaperVCRModel",
     "PaperGQAModel",

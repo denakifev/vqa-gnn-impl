@@ -1,0 +1,39 @@
+# GQA dataset config for the paper-equation path (`PaperGQAModel`).
+#
+# Re-uses the strict GQA package layout under `data_dir` (no preprocessing
+# rebuild required). The dataset slices each merged scene-graph sample into
+# two subgraphs (visual SG + q, textual SG + q) at runtime.
+# See DATA_CONTRACTS.md → "Two-Subgraph Batch Contract".
+
+train:
+  _target_: src.datasets.GQADataset
+  partition: "train"
+  data_dir: "data/gqa"
+  answer_vocab_path: "data/gqa/gqa_answer_vocab.json"
+  max_question_len: 30
+  num_visual_nodes: 100
+  max_kg_nodes: 100
+  d_visual: 2048
+  d_kg: 600
+  text_encoder_name: "roberta-large"
+  instance_transforms: ${transforms.instance_transforms.train}
+  shuffle_index: True
+  expect_graph_edge_types: True
+  strict_graph_schema: True
+  emit_two_subgraphs: True
+
+val:
+  _target_: src.datasets.GQADataset
+  partition: "val"
+  data_dir: "data/gqa"
+  answer_vocab_path: "data/gqa/gqa_answer_vocab.json"
+  max_question_len: 30
+  num_visual_nodes: 100
+  max_kg_nodes: 100
+  d_visual: 2048
+  d_kg: 600
+  text_encoder_name: "roberta-large"
+  instance_transforms: ${transforms.instance_transforms.inference}
+  expect_graph_edge_types: True
+  strict_graph_schema: True
+  emit_two_subgraphs: True

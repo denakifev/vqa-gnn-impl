@@ -3,7 +3,7 @@ _target_: src.model.PaperVCRModel
 # Paper-equation VCR architecture path.
 # This config composes but is not runnable with the current VCRDataset batch
 # contract. It requires the split scene/concept subgraph contract documented in
-# PAPER_PARITY_MATRIX.md and BLOCKED_EXACTNESS_ITEMS.md.
+# GAP_ANALYSIS.md.
 
 d_visual: 2048
 

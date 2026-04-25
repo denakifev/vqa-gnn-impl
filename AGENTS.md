@@ -42,8 +42,13 @@
 
 Остальные старые отчёты удалены или считаются superseded.
 
-Для GQA source-of-truth runtime model — `GQAVQAGNNModel`
-(`baseline_gqa.yaml`). `PaperGQAModel` — equation reference, не runtime.
+Для GQA два полностью runnable path:
+- fast path: `GQAVQAGNNModel` + merged graph (`baseline_gqa.yaml`,
+  `inference_gqa.yaml`);
+- paper-equation path: `PaperGQAModel` + two-subgraph batch
+  (`paper_vqa_gnn_gqa.yaml`, `inference_paper_gqa.yaml`).
+Оба читают тот же strict GQA package; switch между ними через config,
+HDF5 пересобирать не нужно.
 
 ## Рабочие Статусы
 
@@ -70,10 +75,11 @@
 
 ### GQA
 
-- Strict GQA package был локально собран и `validated`.
+- Strict GQA package был локально собран, uploaded to Kaggle и затем
+  validated end-to-end against restored real Kaggle data.
 - Package был загружен на Kaggle из `kaggle_staging/gqa-gnn-data`.
-- Full local GQA processed/raw/staging payloads были намеренно удалены после
-  upload.
+- Full local GQA processed/raw/staging payloads могут быть удалены после
+  upload для экономии места.
 - Локальный `data/gqa` сейчас не обязан существовать.
 - Для локальных GQA запусков нужно восстановить private Kaggle dataset в
   expected layout или указать Hydra `datasets.*.data_dir` на восстановленный
@@ -88,8 +94,10 @@ Validated strict GQA contract до cleanup:
   `graph_edge_types`;
 - graph `node_features.shape[-1] == 600`;
 - graph attrs include `d_kg=600`, `graph_edge_type_count=624`,
-  `graph_mode=official_scene_graph`, `conceptnet_used=False`;
-- `scripts/validate_gqa_data.py --skip-runtime-check` passed with `0` errors.
+  `graph_mode=official_scene_graph`, `conceptnet_used=False`,
+  `fully_connected_fallback_used=False`;
+- runtime path validated:
+  `GQADataset -> gqa_collate_fn -> GQAVQAGNNModel(num_relations=624) -> GQALoss -> GQAAccuracy`.
 
 ### VCR
 
@@ -118,16 +126,30 @@ data/vcr/knowledge_graphs/val_graphs.h5
 - Output contract: `[B*4, 1]`, один score на candidate.
 - `num_answers` не является внешним параметром VCR.
 
-### GQA
+### GQA (fast path)
 
 - Model: `src/model/gqa_model.py::GQAVQAGNNModel`.
-- Dataset: `GQADataset`, `GQADemoDataset`.
+- Dataset: `GQADataset` (default `emit_two_subgraphs=False`),
+  `GQADemoDataset`.
 - Collate: `gqa_collate_fn`.
 - Loss: `GQALoss`.
 - Metric: `GQAAccuracy`.
 - Output contract: `[B, 1842]`.
 - `graph_edge_types` находится в batch contract и consumed by
   relation-aware GQA message passing.
+
+### GQA (paper-equation path)
+
+- Model: `src/model/paper_vqa_gnn.py::PaperGQAModel`.
+- Dataset: `GQADataset(emit_two_subgraphs=True)` или
+  `GQADemoDataset(emit_two_subgraphs=True)`.
+- Collate: `gqa_paper_collate_fn`.
+- Loss: `GQALoss`.
+- Metric: `GQAAccuracy`.
+- Output contract: `[B, 1842]`.
+- Batch keys: 12 paper tensors (visual SG + q, textual SG + q) — см.
+  `src/datasets/gqa_collate.py::PAPER_TENSOR_KEYS` и
+  `DATA_CONTRACTS.md` → "Two-Subgraph Batch Contract".
 
 ### Общее Ядро
 

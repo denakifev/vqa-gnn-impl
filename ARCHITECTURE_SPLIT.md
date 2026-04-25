@@ -54,29 +54,36 @@ VCR data пока не подготовлены локально. Real-data VCR 
 
 ## Стек GQA
 
-GQA имеет два архитектурных path:
+GQA имеет два полностью runnable архитектурных path. Оба читают тот же
+strict GQA package.
 
-1. **Runtime source-of-truth** — `GQAVQAGNNModel` с merged graph и
-   relation-aware DenseGAT bias. Запускается end-to-end против strict
-   Kaggle package. Используется `baseline_gqa.yaml` и `inference_gqa.yaml`.
-2. **Equation reference** — `PaperGQAModel` с двумя subgraphs (visual SG +
-   textual SG) и shared q-node, реализующий §4.1–§4.3 paper equations.
-   Конфиг `paper_vqa_gnn_gqa.yaml` композится только для проверки форм;
-   end-to-end runtime blocked by two-subgraph batch contract.
+1. **Merged-graph fast path** — `GQAVQAGNNModel` с одним merged graph и
+   relation-aware DenseGAT bias. `baseline_gqa.yaml`,
+   `inference_gqa.yaml`. `paper-aligned approximation`.
+2. **Paper-equation path** — `PaperGQAModel` с двумя subgraphs
+   (visual SG + q, textual SG + q), реализующий §4.1–§4.3.
+   `paper_vqa_gnn_gqa.yaml`, `inference_paper_gqa.yaml`.
+   `GQADataset(emit_two_subgraphs=True)` слайсит существующий
+   merged-graph HDF5 в paper-batch на runtime — пересборка HDF5 не
+   нужна. Slice статически lossless (`gqa_preprocessing.py` не пишет
+   visual↔textual cross-edges).
 
 | Слой | Файл / config | Статус |
 |---|---|---|
-| Runtime model | `src/model/gqa_model.py::GQAVQAGNNModel` | `implemented`, `validated`, `paper-aligned approximation` |
-| Equation-reference model | `src/model/paper_vqa_gnn.py::PaperGQAModel` | `implemented`, equation-shape `validated`, `not runtime-ready` |
-| Equation-reference RGAT | `src/model/paper_rgat.py::PaperMultiRelationGATLayer` | `implemented`, equation-shape `validated` |
-| Dataset | `src/datasets/gqa_dataset.py::GQADataset`, `GQADemoDataset` | `implemented`, demo `runtime-valid` |
-| Collate | `src/datasets/gqa_collate.py::gqa_collate_fn` | `validated` |
+| Fast-path model | `src/model/gqa_model.py::GQAVQAGNNModel` | `implemented`, `validated`, `paper-aligned approximation` |
+| Paper-path model | `src/model/paper_vqa_gnn.py::PaperGQAModel` | `implemented`, end-to-end `validated` |
+| Paper RGAT layer | `src/model/paper_rgat.py::PaperMultiRelationGATLayer` | `implemented`, `validated` |
+| Dataset | `src/datasets/gqa_dataset.py::GQADataset(+emit_two_subgraphs)`, `GQADemoDataset(+emit_two_subgraphs)` | `implemented`, both modes `validated` |
+| Fast-path collate | `src/datasets/gqa_collate.py::gqa_collate_fn` | `validated` |
+| Paper-path collate | `src/datasets/gqa_collate.py::gqa_paper_collate_fn` | `validated` |
 | Loss | `src/loss/gqa_loss.py::GQALoss` | `validated`, `paper-aligned` |
 | Metric | `src/metrics/gqa_metric.py::GQAAccuracy` | `validated` |
 | Optimizer param groups | `src/optim/paper_param_groups.py` | `implemented`, `validated` |
 | Scheduler | `src/lr_schedulers/paper_warmup_cosine.py` | `implemented`, `validated` |
-| Runtime config | `baseline_gqa.yaml` (`model: vqa_gnn_gqa`) | composition `validated` |
-| Paper-reference config | `paper_vqa_gnn_gqa.yaml` (`model: paper_vqa_gnn_gqa`) | composes; not runtime-ready |
+| Fast-path train config | `baseline_gqa.yaml` (`model: vqa_gnn_gqa`) | composition `validated` |
+| Fast-path inference config | `inference_gqa.yaml` | composition `validated` |
+| Paper-path train config | `paper_vqa_gnn_gqa.yaml` (`model: paper_vqa_gnn_gqa`) | composition `validated`, runnable |
+| Paper-path inference config | `inference_paper_gqa.yaml` | composition `validated`, runnable |
 
 GQA runtime contract:
 

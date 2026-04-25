@@ -133,6 +133,7 @@ class GQADataset(Dataset):
         strict_answer_vocab: bool = True,
         expect_graph_edge_types: bool = True,
         strict_graph_schema: bool = True,
+        emit_two_subgraphs: bool = False,
     ):
         """
         Args:
@@ -161,6 +162,15 @@ class GQADataset(Dataset):
                 `node_features` width does not equal `d_kg`, or when
                 `graph_edge_types` is missing while
                 `expect_graph_edge_types=True`. See DATA_CONTRACTS.md.
+            emit_two_subgraphs (bool): if True, emit the paper-batch contract
+                for `PaperGQAModel` (visual SG + textual SG, q at the last
+                index of each subgraph) instead of the merged-graph batch
+                consumed by `GQAVQAGNNModel`. The slice is statically
+                lossless because the preprocessing pipeline never writes
+                visual↔textual cross-edges in the merged adjacency
+                (gqa_preprocessing.py only writes visual↔visual,
+                textual↔textual, and q↔visual / q↔textual). See
+                DATA_CONTRACTS.md → "Two-Subgraph Batch Contract".
         """
         self.partition = partition
         self.data_dir = Path(data_dir)
@@ -173,6 +183,7 @@ class GQADataset(Dataset):
         self.strict_answer_vocab = strict_answer_vocab
         self.expect_graph_edge_types = expect_graph_edge_types
         self.strict_graph_schema = strict_graph_schema
+        self.emit_two_subgraphs = emit_two_subgraphs
 
         # Load answer vocabulary
         vocab_path = Path(answer_vocab_path)
@@ -216,9 +227,11 @@ class GQADataset(Dataset):
 
         logger.info(f"GQADataset [{partition}]: {len(self._index)} samples.")
 
-        from src.datasets.gqa_collate import gqa_collate_fn
+        from src.datasets.gqa_collate import gqa_collate_fn, gqa_paper_collate_fn
 
-        self.collate_fn = gqa_collate_fn
+        self.collate_fn = (
+            gqa_paper_collate_fn if self.emit_two_subgraphs else gqa_collate_fn
+        )
 
     def _build_index(self, limit: Optional[int] = None) -> list:
         """
@@ -478,6 +491,22 @@ class GQADataset(Dataset):
 
         label = torch.tensor(max(entry["label"], 0), dtype=torch.long)
 
+        if self.emit_two_subgraphs:
+            return _to_two_subgraphs_item(
+                visual_features=visual_features,
+                question_input_ids=question_input_ids,
+                question_attention_mask=question_attention_mask,
+                graph_node_features=graph_node_features,
+                graph_adj=graph_adj,
+                graph_edge_types=graph_edge_types,
+                num_visual_nodes=self.num_visual_nodes,
+                max_kg_nodes=self.max_kg_nodes,
+                d_visual=self.d_visual,
+                d_kg=self.d_kg,
+                label=label,
+                question_id=question_id,
+            )
+
         return {
             "visual_features": visual_features,
             "question_input_ids": question_input_ids,
@@ -549,6 +578,7 @@ class GQADemoDataset(Dataset):
         d_kg: int = 600,
         seed: int = 42,
         instance_transforms=None,
+        emit_two_subgraphs: bool = False,
         **kwargs,
     ):
         """
@@ -571,39 +601,93 @@ class GQADemoDataset(Dataset):
         self.d_visual = d_visual
         self.d_kg = d_kg
         self.n_total = num_visual_nodes + 1 + max_kg_nodes
+        self.emit_two_subgraphs = emit_two_subgraphs
 
         rng = np.random.default_rng(seed)
         self._data = [self._gen_sample(rng, i) for i in range(num_samples)]
 
-        from src.datasets.gqa_collate import gqa_collate_fn
+        from src.datasets.gqa_collate import gqa_collate_fn, gqa_paper_collate_fn
 
-        self.collate_fn = gqa_collate_fn
+        self.collate_fn = (
+            gqa_paper_collate_fn if self.emit_two_subgraphs else gqa_collate_fn
+        )
 
     def _gen_sample(self, rng: np.random.Generator, idx: int) -> dict:
         n_total = self.n_total
+        Nv = self.num_visual_nodes
+        Nt = self.max_kg_nodes
+        q_idx = Nv  # convention from gqa_preprocessing.py: q after visual block
 
         visual_features = torch.tensor(
-            rng.standard_normal((self.num_visual_nodes, self.d_visual)).astype(np.float32)
+            rng.standard_normal((Nv, self.d_visual)).astype(np.float32)
         )
         question_input_ids = torch.randint(0, 50264, (self.max_question_len,))
         question_attention_mask = torch.ones(self.max_question_len, dtype=torch.long)
         graph_node_features = torch.tensor(
-            rng.standard_normal((self.max_kg_nodes, self.d_kg)).astype(np.float32)
+            rng.standard_normal((Nt, self.d_kg)).astype(np.float32)
         )
-        adj_np = (rng.random((n_total, n_total)) > 0.7).astype(np.float32)
+
+        # Build adjacency matching the preprocessing invariant:
+        # visual↔textual cross-edges are zero (only q connects them).
+        adj_np = np.zeros((n_total, n_total), dtype=np.float32)
+        # Visual block: random sparse symmetric
+        v_block = (rng.random((Nv, Nv)) > 0.7).astype(np.float32)
+        v_block = np.maximum(v_block, v_block.T)
+        adj_np[:Nv, :Nv] = v_block
+        # Textual block: random sparse symmetric
+        t_block = (rng.random((Nt, Nt)) > 0.7).astype(np.float32)
+        t_block = np.maximum(t_block, t_block.T)
+        adj_np[Nv + 1 :, Nv + 1 :] = t_block
+        # Q row/col: q connected to all visual + all textual (paper §4.1)
+        adj_np[q_idx, :Nv] = 1.0
+        adj_np[:Nv, q_idx] = 1.0
+        adj_np[q_idx, Nv + 1 :] = 1.0
+        adj_np[Nv + 1 :, q_idx] = 1.0
+        # Self loops
         np.fill_diagonal(adj_np, 1.0)
         graph_adj = torch.tensor(adj_np)
+
+        # Edge types respecting the same block structure.
         edge_types_np = np.zeros((n_total, n_total), dtype=np.int64)
-        np.fill_diagonal(edge_types_np, 1)
+        # Random ids on each block; values bounded to avoid overflowing demo
+        # `num_relations` upper bounds. These are demo synthetic values, not
+        # real relation ids.
+        v_rel = rng.integers(2, 8, size=(Nv, Nv)).astype(np.int64)
+        edge_types_np[:Nv, :Nv] = np.where(adj_np[:Nv, :Nv] > 0, v_rel, 0)
+        t_rel = rng.integers(2, 8, size=(Nt, Nt)).astype(np.int64)
+        edge_types_np[Nv + 1 :, Nv + 1 :] = np.where(adj_np[Nv + 1 :, Nv + 1 :] > 0, t_rel, 0)
+        # Q-visual / q-textual special types
+        edge_types_np[q_idx, :Nv] = 2  # __question_visual__ id placeholder
+        edge_types_np[:Nv, q_idx] = 2
+        edge_types_np[q_idx, Nv + 1 :] = 3  # __question_textual__ id placeholder
+        edge_types_np[Nv + 1 :, q_idx] = 3
+        np.fill_diagonal(edge_types_np, 1)  # __self__ id placeholder
         graph_edge_types = torch.tensor(edge_types_np, dtype=torch.long)
+
         node_types = np.array(
-            [NODE_TYPE_VISUAL] * self.num_visual_nodes
+            [NODE_TYPE_VISUAL] * Nv
             + [NODE_TYPE_QUESTION]
-            + [NODE_TYPE_KG] * self.max_kg_nodes,
+            + [NODE_TYPE_KG] * Nt,
             dtype=np.int64,
         )
         graph_node_types = torch.tensor(node_types, dtype=torch.long)
         label = torch.tensor(int(rng.integers(0, self.num_answers)), dtype=torch.long)
+
+        if self.emit_two_subgraphs:
+            return _to_two_subgraphs_item(
+                visual_features=visual_features,
+                question_input_ids=question_input_ids,
+                question_attention_mask=question_attention_mask,
+                graph_node_features=graph_node_features,
+                graph_adj=graph_adj,
+                graph_edge_types=graph_edge_types,
+                num_visual_nodes=Nv,
+                max_kg_nodes=Nt,
+                d_visual=self.d_visual,
+                d_kg=self.d_kg,
+                label=label,
+                question_id=str(idx),
+            )
 
         return {
             "visual_features": visual_features,
@@ -649,3 +733,98 @@ def _pad_or_trim_2d(t: torch.Tensor, size: int) -> torch.Tensor:
     padded = torch.zeros(size, size, dtype=t.dtype)
     padded[:cur, :cur] = t
     return padded
+
+
+def _to_two_subgraphs_item(
+    *,
+    visual_features: torch.Tensor,
+    question_input_ids: torch.Tensor,
+    question_attention_mask: torch.Tensor,
+    graph_node_features: torch.Tensor,
+    graph_adj: torch.Tensor,
+    graph_edge_types: torch.Tensor,
+    num_visual_nodes: int,
+    max_kg_nodes: int,
+    d_visual: int,
+    d_kg: int,
+    label: torch.Tensor,
+    question_id: str,
+) -> dict:
+    """
+    Slice a merged GQA graph into two subgraphs for `PaperGQAModel`.
+
+    The merged adjacency layout produced by `gqa_preprocessing.py` is:
+
+        rows [0..Nv-1]            : visual nodes
+        row  Nv                    : q (super) node
+        rows [Nv+1..Nv+Nt]         : textual nodes
+
+    The preprocessing pipeline never writes visual↔textual cross-edges
+    (only visual↔visual, textual↔textual, q↔visual, q↔textual). That is
+    a *static* property of the build code, so this slice is lossless for
+    every sample in the strict GQA package.
+
+    Convention (q at the LAST index in each subgraph):
+        visual subgraph   : visual_nodes ++ [q]   → q at index Nv
+        textual subgraph  : textual_nodes ++ [q]  → q at index Nt
+
+    The q-slot in `visual_node_features` and `textual_node_features` is
+    filled with zeros; `PaperGQAModel.forward` overwrites it with the
+    question encoding after projection, so the placeholder value is
+    discarded.
+    """
+    Nv = num_visual_nodes
+    Nt = max_kg_nodes
+    q_in_merged = Nv
+
+    # ---- Visual subgraph (size Nv + 1) ----------------------------------
+    v_size = Nv + 1
+    # Take merged rows/cols [0..Nv] inclusive (visual block + q). q lands
+    # naturally at the last index Nv.
+    visual_adj = graph_adj[:v_size, :v_size].clone()
+    visual_edge_types = graph_edge_types[:v_size, :v_size].clone()
+    visual_node_features = torch.zeros(v_size, d_visual, dtype=visual_features.dtype)
+    visual_node_features[:Nv] = visual_features
+    visual_node_types = torch.full((v_size,), NODE_TYPE_VISUAL, dtype=torch.long)
+    visual_node_types[Nv] = NODE_TYPE_QUESTION
+    visual_node_is_q_index = torch.tensor(Nv, dtype=torch.long)
+
+    # ---- Textual subgraph (size Nt + 1) ---------------------------------
+    # Permutation: [textual..., q] → q at the last index Nt.
+    t_size = Nt + 1
+    textual_adj = torch.zeros(t_size, t_size, dtype=graph_adj.dtype)
+    textual_adj[:Nt, :Nt] = graph_adj[Nv + 1 : Nv + 1 + Nt, Nv + 1 : Nv + 1 + Nt]
+    textual_adj[Nt, :Nt] = graph_adj[q_in_merged, Nv + 1 : Nv + 1 + Nt]
+    textual_adj[:Nt, Nt] = graph_adj[Nv + 1 : Nv + 1 + Nt, q_in_merged]
+    textual_adj[Nt, Nt] = graph_adj[q_in_merged, q_in_merged]
+
+    textual_edge_types = torch.zeros(t_size, t_size, dtype=graph_edge_types.dtype)
+    textual_edge_types[:Nt, :Nt] = graph_edge_types[
+        Nv + 1 : Nv + 1 + Nt, Nv + 1 : Nv + 1 + Nt
+    ]
+    textual_edge_types[Nt, :Nt] = graph_edge_types[q_in_merged, Nv + 1 : Nv + 1 + Nt]
+    textual_edge_types[:Nt, Nt] = graph_edge_types[Nv + 1 : Nv + 1 + Nt, q_in_merged]
+    textual_edge_types[Nt, Nt] = graph_edge_types[q_in_merged, q_in_merged]
+
+    textual_node_features = torch.zeros(t_size, d_kg, dtype=graph_node_features.dtype)
+    textual_node_features[:Nt] = graph_node_features
+    textual_node_types = torch.full((t_size,), NODE_TYPE_KG, dtype=torch.long)
+    textual_node_types[Nt] = NODE_TYPE_QUESTION
+    textual_node_is_q_index = torch.tensor(Nt, dtype=torch.long)
+
+    return {
+        "question_input_ids": question_input_ids,
+        "question_attention_mask": question_attention_mask,
+        "visual_node_features": visual_node_features,
+        "visual_adj": visual_adj,
+        "visual_edge_types": visual_edge_types,
+        "visual_node_types": visual_node_types,
+        "visual_node_is_q_index": visual_node_is_q_index,
+        "textual_node_features": textual_node_features,
+        "textual_adj": textual_adj,
+        "textual_edge_types": textual_edge_types,
+        "textual_node_types": textual_node_types,
+        "textual_node_is_q_index": textual_node_is_q_index,
+        "labels": label,
+        "question_id": question_id,
+    }
