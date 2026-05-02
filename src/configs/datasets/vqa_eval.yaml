@@ -1,0 +1,16 @@
+# VQA v2 dataset configuration for inference only (val split).
+# Use with inference_vqa.yaml.
+# Requires real data. See vqa.yaml for layout.
+
+val:
+  _target_: src.datasets.VQADataset
+  partition: "val"
+  data_dir: "data/vqa"
+  answer_vocab_path: "data/vqa/answer_vocab.json"
+  max_question_len: 20
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  d_kg: 300  # must match model config and prepare_kg_graphs.py --d-kg
+  text_encoder_name: "roberta-large"
+  instance_transforms: ${transforms.instance_transforms.inference}

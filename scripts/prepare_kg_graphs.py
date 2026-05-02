@@ -24,7 +24,7 @@ DEVIATION FROM PAPER (explicitly documented):
   2. Node features: ConceptNet Numberbatch embeddings (default 300-dim).
      The paper uses custom KG embeddings whose details are not fully disclosed.
      The d_kg dimension must match src/configs/datasets/vqa.yaml and
-     src/configs/model/vqa_gnn.yaml. Update both configs if using 300-dim.
+     src/configs/model/vqa_gnn_vqa.yaml. Update both configs if changing d_kg.
   3. Edge structure: ConceptNet 5.7 assertions (if provided). Without the
      assertions file, KG nodes are connected as a fully-connected subgraph.
   4. Adjacency: visual nodes and question node are fully connected. KG nodes
@@ -47,10 +47,9 @@ Config alignment:
     The d_kg value passed here must match:
       src/configs/datasets/vqa.yaml        → d_kg
       src/configs/datasets/vqa_eval.yaml   → d_kg
-      src/configs/model/vqa_gnn.yaml       → d_kg
+      src/configs/model/vqa_gnn_vqa.yaml   → d_kg
 
-    Default here is 300 (full Numberbatch). Default in configs is 100 (for demo).
-    To use 300-dim features, update both the script call and the YAML configs.
+    Default here is 300 (full Numberbatch), matching the active VQA-2 configs.
 
 Usage:
     # Build train graphs (300-dim features, needs config update):
@@ -531,10 +530,10 @@ def main():
         default=300,
         help=(
             "KG node feature dimension. Must match d_kg in YAML configs "
-            "(src/configs/model/vqa_gnn.yaml and src/configs/datasets/vqa.yaml). "
+            "(src/configs/model/vqa_gnn_vqa.yaml and src/configs/datasets/vqa.yaml). "
             "Default: 300 (full Numberbatch). "
             "If < 300, Numberbatch vectors are truncated (approximation). "
-            "Demo configs default to 100; update them if using 300."
+            "Active VQA-2 configs default to 300."
         ),
     )
     parser.add_argument(
@@ -675,7 +674,7 @@ def main():
     print("Visual↔visual: fully connected (paper not fully specified)")
     print("--- END DEVIATION SUMMARY ---")
     print(
-        f"\nReminder: update src/configs/model/vqa_gnn.yaml (d_kg: {args.d_kg}) and "
+        f"\nReminder: update src/configs/model/vqa_gnn_vqa.yaml (d_kg: {args.d_kg}) and "
         f"src/configs/datasets/vqa.yaml (d_kg: {args.d_kg}) to match output dimension."
     )
 

@@ -2,19 +2,15 @@
 
 ## Назначение
 
-Рабочие правила для агентов, которые продолжают разработку и аудит VQA-GNN в
-этом репозитории.
+Рабочие правила для агентов, которые продолжают разработку и аудит
+GQA/VQA-2-focused VQA-GNN в этом репозитории.
 
 Актуальный статус проекта: `partially validated baseline`.
 
-Репозиторий реализует архитектурный split:
-
-- VCR: `VCRVQAGNNModel`, candidate scoring, отдельные Q->A и QA->R запуски.
-- GQA: `GQAVQAGNNModel`, 1842-way classification.
-- Общее ядро: `src/model/gnn_core.py`.
-
-При этом репозиторий **не** является `paper reproduced` и **не** является
-`fully paper-faithful`. Реальные paper numbers отсутствуют.
+Текущая стратегия: практичные GQA и VQA-2 train paths, которые можно запускать
+в Kaggle лимитах, затем сравнивать с архитектурными изменениями. GQA цель —
+`paper-aligned approximation`; VQA-2 — coursework extension, не результат
+статьи.
 
 ## Главные Правила
 
@@ -35,20 +31,9 @@
 Активные документы:
 
 - [README.md](README.md) — текущий статус, команды, data state.
-- [ARCHITECTURE_SPLIT.md](ARCHITECTURE_SPLIT.md) — разделение VCR/GQA.
-- [GAP_ANALYSIS.md](GAP_ANALYSIS.md) — блокеры, limitations, deviations.
-- [DATA_CONTRACTS.md](DATA_CONTRACTS.md) — strict GQA data contract.
-- [GQA_CLOSURE_REPORT.md](GQA_CLOSURE_REPORT.md) — итог GQA-фазы.
-
-Остальные старые отчёты удалены или считаются superseded.
-
-Для GQA два полностью runnable path:
-- fast path: `GQAVQAGNNModel` + merged graph (`baseline_gqa.yaml`,
-  `inference_gqa.yaml`);
-- paper-equation path: `PaperGQAModel` + two-subgraph batch
-  (`paper_vqa_gnn_gqa.yaml`, `inference_paper_gqa.yaml`).
-Оба читают тот же strict GQA package; switch между ними через config,
-HDF5 пересобирать не нужно.
+- [GAP_ANALYSIS.md](GAP_ANALYSIS.md) — limitations, deviations, Kaggle risks.
+- [DATA_CONTRACTS.md](DATA_CONTRACTS.md) — GQA and VQA-2 data contracts.
+- [GQA_CLOSURE_REPORT.md](GQA_CLOSURE_REPORT.md) — итог GQA engineering-фазы.
 
 ## Рабочие Статусы
 
@@ -68,24 +53,18 @@ HDF5 пересобирать не нужно.
 - `fully paper-faithful`
 - `ready for full reproduction`
 - `GQA real baseline validated`
-- `VCR real baseline validated`
-- `Q->AR reproduced`
+- `VQA-2 real baseline validated`
 
 ## Текущее Состояние Данных
 
-### GQA
+Strict GQA package был локально собран, uploaded to Kaggle и затем
+validated end-to-end against restored real Kaggle data.
 
-- Strict GQA package был локально собран, uploaded to Kaggle и затем
-  validated end-to-end against restored real Kaggle data.
-- Package был загружен на Kaggle из `kaggle_staging/gqa-gnn-data`.
-- Full local GQA processed/raw/staging payloads могут быть удалены после
-  upload для экономии места.
-- Локальный `data/gqa` сейчас не обязан существовать.
-- Для локальных GQA запусков нужно восстановить private Kaggle dataset в
-  expected layout или указать Hydra `datasets.*.data_dir` на восстановленный
-  путь.
+Локальный `data/gqa` сейчас не обязан существовать. Для локальных GQA запусков
+нужно восстановить private Kaggle dataset в expected layout или указать Hydra
+`datasets.*.data_dir` на восстановленный путь.
 
-Validated strict GQA contract до cleanup:
+Validated strict GQA contract:
 
 - `answer_to_idx` exists, size `1842`;
 - relation vocab exists, relation count `624`;
@@ -99,38 +78,16 @@ Validated strict GQA contract до cleanup:
 - runtime path validated:
   `GQADataset -> gqa_collate_fn -> GQAVQAGNNModel(num_relations=624) -> GQALoss -> GQAAccuracy`.
 
-### VCR
-
-- Local VCR real data не подготовлены.
-- VCR data лицензированы; Kaggle dataset должен оставаться private.
-- Baseline-level VCR package должен содержать:
-
-```text
-data/vcr/train.jsonl
-data/vcr/val.jsonl
-data/vcr/visual_features/train_features.h5
-data/vcr/visual_features/val_features.h5
-data/vcr/knowledge_graphs/train_graphs.h5
-data/vcr/knowledge_graphs/val_graphs.h5
-```
+VQA-2 real data package сейчас `not validated yet`. VQA-2 expected layout и
+batch contract описаны в `DATA_CONTRACTS.md`. Перед real train запускать
+`scripts/validate_vqa_data.py`.
 
 ## Ключевые Контракты
 
-### VCR
-
-- Model: `src/model/vcr_model.py::VCRVQAGNNModel`.
-- Dataset: `VCRDataset`, `VCRDemoDataset`.
-- Collate: `make_vcr_collate_fn`.
-- Loss: `VCRLoss`.
-- Metrics: `VCRQAAccuracy`, `VCRQARAccuracy`, `VCRQARJointAccuracy`.
-- Output contract: `[B*4, 1]`, один score на candidate.
-- `num_answers` не является внешним параметром VCR.
-
-### GQA (fast path)
+### GQA Runtime Path
 
 - Model: `src/model/gqa_model.py::GQAVQAGNNModel`.
-- Dataset: `GQADataset` (default `emit_two_subgraphs=False`),
-  `GQADemoDataset`.
+- Dataset: `GQADataset`, `GQADemoDataset`.
 - Collate: `gqa_collate_fn`.
 - Loss: `GQALoss`.
 - Metric: `GQAAccuracy`.
@@ -138,18 +95,17 @@ data/vcr/knowledge_graphs/val_graphs.h5
 - `graph_edge_types` находится в batch contract и consumed by
   relation-aware GQA message passing.
 
-### GQA (paper-equation path)
+### VQA-2 Runtime Path
 
-- Model: `src/model/paper_vqa_gnn.py::PaperGQAModel`.
-- Dataset: `GQADataset(emit_two_subgraphs=True)` или
-  `GQADemoDataset(emit_two_subgraphs=True)`.
-- Collate: `gqa_paper_collate_fn`.
-- Loss: `GQALoss`.
-- Metric: `GQAAccuracy`.
-- Output contract: `[B, 1842]`.
-- Batch keys: 12 paper tensors (visual SG + q, textual SG + q) — см.
-  `src/datasets/gqa_collate.py::PAPER_TENSOR_KEYS` и
-  `DATA_CONTRACTS.md` → "Two-Subgraph Batch Contract".
+- Model: `src/model/vqa_gnn.py::VQAGNNModel`.
+- Dataset: `VQADataset`, `VQADemoDataset`.
+- Collate: `vqa_collate_fn`.
+- Loss: `VQALoss`.
+- Metric: `VQAAccuracy`.
+- Output contract: `[B, 3129]`.
+- `answer_scores` находится в batch contract и consumed by `VQALoss` /
+  `VQAAccuracy`.
+- Не claim'ить VQA-2 как validated paper task.
 
 ### Общее Ядро
 
@@ -168,7 +124,7 @@ switch.
 
 ### Агент Данных
 
-Отвечает за dataset readers, HDF5/JSON/JSONL contracts, preprocessing scripts,
+Отвечает за dataset readers, HDF5/JSON contracts, preprocessing scripts,
 validation scripts и batch keys.
 
 ### Агент Модели
@@ -179,7 +135,7 @@ architectural deviations.
 ### Агент Обучения И Проверки
 
 Отвечает за trainer/inferencer compatibility, losses, metrics, checkpoints,
-smoke/runtime validation.
+smoke/runtime validation и Kaggle budget fit.
 
 ### Агент Документации И Воспроизводимости
 

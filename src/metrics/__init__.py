@@ -1,9 +1,7 @@
 from src.metrics.gqa_metric import GQAAccuracy
-from src.metrics.vcr_metric import VCRQAAccuracy, VCRQARAccuracy, VCRQARJointAccuracy
+from src.metrics.vqa_metric import VQAAccuracy
 
 __all__ = [
     "GQAAccuracy",
-    "VCRQAAccuracy",
-    "VCRQARAccuracy",
-    "VCRQARJointAccuracy",
+    "VQAAccuracy",
 ]

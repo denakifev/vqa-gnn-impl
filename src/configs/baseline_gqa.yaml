@@ -1,5 +1,6 @@
 # Training config for VQA-GNN on GQA task (arXiv:2205.11501).
-# This is a PAPER-ALIGNED config. See GAP_ANALYSIS.md for deviations.
+# This is the single supported paper-aligned approximation path.
+# It is intentionally Kaggle-practical, not a strict equation reproduction.
 #
 # GQA: open-ended VQA on Visual Genome images with compositional questions.
 # Answer space: 1842 classes (paper target for GQA).
@@ -40,7 +41,8 @@ defaults:
 
 writer:
   project_name: "vqa_gnn"
-  run_name: "gqa_baseline"
+  run_name: "gqa_kaggle_paper_aligned"
+  mode: "offline"
 
 optimizer:
   _target_: torch.optim.AdamW
@@ -49,7 +51,7 @@ optimizer:
 
 lr_scheduler:
   _target_: torch.optim.lr_scheduler.StepLR
-  gamma: 0.5
+  gamma: 0.8
   step_size: ${trainer.epoch_len}
 
 loss_function:
@@ -58,8 +60,8 @@ loss_function:
 trainer:
   log_step: 20
   progress_bar: on
-  n_epochs: 20
-  epoch_len: 5000
+  n_epochs: 3
+  epoch_len: 1000
   device_tensors:
     - "visual_features"
     - "question_input_ids"
@@ -73,8 +75,8 @@ trainer:
   device: auto
   override: False
   monitor: "max val_GQA_Accuracy"
-  save_period: 5
-  early_stop: 10
+  save_period: 1
+  early_stop: 3
   save_dir: "saved"
   seed: 42
   skip_oom: True

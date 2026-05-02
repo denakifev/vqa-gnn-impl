@@ -2,7 +2,7 @@
 #
 # Uses the lightweight GQA demo path so `python train.py` remains a valid
 # smoke test, while task-specific experiments should still use explicit
-# `--config-name baseline_gqa|baseline_vcr_qa|baseline_vcr_qar`.
+# `--config-name baseline_gqa`.
 
 defaults:
   - baseline_gqa

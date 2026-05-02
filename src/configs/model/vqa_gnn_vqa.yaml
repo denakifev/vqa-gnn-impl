@@ -1,0 +1,41 @@
+_target_: src.model.VQAGNNModel
+
+# Visual feature dimension (bottom-up attention: 2048)
+d_visual: 2048
+
+# KG node feature dimension.
+# MUST MATCH: d_kg in src/configs/datasets/vqa.yaml (and vqa_eval.yaml)
+#             AND the --d-kg value used when running scripts/prepare_kg_graphs.py
+#
+# ConceptNet Numberbatch: 300-dim (full) or truncated to any smaller size.
+# Default here is 300 for real VQA data prepared with Numberbatch.
+# Demo configs keep their own d_kg=100.
+# Deviation from paper: paper uses custom KG embeddings (dim not disclosed).
+d_kg: 300
+
+# Hidden dimension throughout GNN and classification head.
+# Kaggle practical default: 512. RoBERTa-large is projected down to this
+# graph/fusion width by HFQuestionEncoder.
+d_hidden: 512
+
+# Number of dense GAT layers
+# Deviation: paper reports 3 layers; increase for experiments.
+num_gnn_layers: 3
+
+# Attention heads per GAT layer (d_hidden must be divisible by num_heads)
+num_heads: 8
+
+# Answer vocabulary size (VQA v2 open-ended: 3129)
+num_answers: 3129
+
+# Dropout rate
+dropout: 0.1
+
+# Text encoder for question encoding.
+# VQA-2 is a coursework extension here, not a validated paper task. We still
+# use RoBERTa-large to keep the question encoder aligned with the GQA path.
+text_encoder_name: "roberta-large"
+
+# Whether to freeze text encoder weights during training.
+# Frozen by default for Kaggle practicality.
+freeze_text_encoder: True

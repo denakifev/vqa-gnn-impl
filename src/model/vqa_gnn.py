@@ -4,21 +4,20 @@ for Visual Question Answering.
 
 Reference: arXiv:2205.11501 / ICCV 2023
 
-This module keeps the original monolithic VQAGNNModel for backward
-compatibility and re-exports the shared GNN primitives that tests
+This module keeps the original monolithic VQAGNNModel for the restored
+VQA-2 coursework path and re-exports the shared GNN primitives that tests
 import from this path.
 
-Paper-aligned configs now use the task-specific classes:
-  - VCR (Q→A and QA→R): src.model.VCRVQAGNNModel  (vcr_model.py)
-  - GQA:                 src.model.GQAVQAGNNModel  (gqa_model.py)
+Active configs use task-specific classes:
+  - GQA: src.model.GQAVQAGNNModel (gqa_model.py)
+  - VQA-2 coursework path: src.model.VQAGNNModel (this module)
 
 Shared primitives (DenseGATLayer, HFQuestionEncoder) live in gnn_core.py
 and are re-exported here for backward compatibility with existing imports
 (e.g. `from src.model.vqa_gnn import DenseGATLayer`).
 
-VQAGNNModel is kept for internal use and testing infrastructure. It is NOT
-the target class for paper-aligned training configs — use VCRVQAGNNModel
-or GQAVQAGNNModel for those.
+VQAGNNModel is not a GQA paper-result reproduction target. It is the VQA-2
+coursework baseline class.
 """
 
 import logging
@@ -40,10 +39,8 @@ class VQAGNNModel(nn.Module):
     """
     VQA-GNN model from arXiv:2205.11501.
 
-    This is the original unified implementation kept for backward
-    compatibility. Paper-aligned training configs use:
-        VCR  → src.model.VCRVQAGNNModel
-        GQA  → src.model.GQAVQAGNNModel
+    This is the original unified implementation used by the VQA-2 coursework
+    baseline. GQA paper-aligned configs use src.model.GQAVQAGNNModel.
 
     Architecture:
       1. Project visual region features to d_hidden.
@@ -109,9 +106,8 @@ class VQAGNNModel(nn.Module):
               defaults to `roberta-large` as the closest standard checkpoint.
             - Paper uses torch_geometric / custom GNN; here dense GAT
               (engineering approximation; paper's GNN variant not fully specified).
-            - Default num_answers=3129 is a VQA-v2 legacy fallback; paper-aligned
-              configs use VCRVQAGNNModel (num_answers implicit=1) or
-              GQAVQAGNNModel (num_answers=1842).
+            - Default num_answers=3129 targets the VQA-2 coursework path;
+              GQA configs use GQAVQAGNNModel (num_answers=1842).
         """
         super().__init__()
 

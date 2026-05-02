@@ -577,7 +577,7 @@ def validate_runtime_path(
         batch_size = batch["labels"].shape[0]
 
         if any(key in batch for key in ("soft_labels", "answer_label", "n_candidates")):
-            report.fail("Runtime batch contains VQA-v2 or VCR leakage keys.")
+            report.fail("Runtime batch contains keys from an unsupported task.")
             return
 
         if batch["visual_features"].shape != (batch_size, num_visual_nodes, feature_dim):

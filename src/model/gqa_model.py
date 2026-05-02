@@ -5,11 +5,11 @@ GQA (Generalized Visual Question Answering) is an open-ended VQA task with
 a fixed answer vocabulary. The model produces a probability distribution
 over 1842 answer classes (paper target for the balanced split).
 
-This is architecturally different from VCRVQAGNNModel, which produces a
-scalar score per candidate item for re-ranking 4 choices.
+This is an open-ended classification model over the fixed GQA answer
+vocabulary.
 
 Key GQA-specific characteristics:
-  - Direct classification: output [B, num_answers] without candidate expansion.
+  - Direct classification: output [B, num_answers].
   - Answer vocabulary: 1842 classes (paper-aligned balanced split).
   - Scene graph: GQA batch includes graph_edge_types (relation type matrix),
     representing typed edges from the Visual Genome scene graph.
@@ -21,7 +21,7 @@ GQA scene-graph relation awareness:
   - GQAVQAGNNModel wires graph_edge_types into each dense GAT layer via
     num_relations > 0, which adds a learned per-(head, relation) scalar
     bias to the pre-softmax attention logits. This is the minimal
-    paper-faithful injection of typed scene-graph edges into message
+    paper-aligned injection of typed scene-graph edges into message
     passing; it is not numerically equivalent to an arbitrary relational
     GNN variant, but it is the straightforward adaptation documented in
     the GAT literature.
@@ -73,7 +73,7 @@ class GQAVQAGNNModel(nn.Module):
       - graph_edge_types is consumed by every dense GAT layer when
         num_relations > 0 (the paper-aligned default).
       - Setting num_relations = 0 reverts to the earlier untyped variant
-        (useful only for ablation; not paper-faithful).
+        (useful only for ablation; less paper-aligned).
 
     Batch keys consumed:
         visual_features (Tensor[B, N_v, d_visual]): region features.

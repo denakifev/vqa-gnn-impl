@@ -1,0 +1,90 @@
+# Training config for the VQA-2 coursework path.
+#
+# By default uses the DEMO dataset (synthetic data) for pipeline validation.
+# To train on real VQA v2 data, override:
+#   python train.py --config-name baseline_vqa datasets=vqa
+#
+# VQA-2 was not validated in the referenced paper for this repo. Treat this
+# as a practical project extension, not a paper-result reproduction.
+#
+# Example full run commands:
+#   Demo smoke-test:
+#     python train.py --config-name baseline_vqa
+#
+#   Real VQA v2 training:
+#     python train.py --config-name baseline_vqa datasets=vqa \
+#       datasets.train.data_dir=/path/to/vqa \
+#       datasets.train.answer_vocab_path=/path/to/vqa/answer_vocab.json \
+#       datasets.val.data_dir=/path/to/vqa \
+#       datasets.val.answer_vocab_path=/path/to/vqa/answer_vocab.json
+#
+# Kaggle usage:
+#   python train.py --config-name baseline_vqa datasets=vqa \
+#     datasets.train.data_dir=/kaggle/input/vqa-gnn-data \
+#     datasets.val.data_dir=/kaggle/input/vqa-gnn-data \
+#     datasets.train.answer_vocab_path=/kaggle/input/vqa-gnn-data/answer_vocab.json \
+#     datasets.val.answer_vocab_path=/kaggle/input/vqa-gnn-data/answer_vocab.json \
+#     trainer.save_dir=/kaggle/working/saved
+
+defaults:
+  - model: vqa_gnn_vqa
+  - writer: cometml
+  - metrics: vqa
+  - datasets: vqa_demo   # change to 'vqa' for real data
+  - dataloader: vqa
+  - transforms: vqa
+  - _self_
+
+# Override writer defaults (project name and run name for CometML)
+writer:
+  project_name: "vqa_gnn"
+  run_name: "vqa2_kaggle_baseline"
+  mode: "offline"
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 1e-4
+  weight_decay: 1e-2
+
+lr_scheduler:
+  _target_: torch.optim.lr_scheduler.StepLR
+  gamma: 0.8
+  # step_size is epoch_len; update to match trainer.epoch_len below
+  step_size: ${trainer.epoch_len}
+
+loss_function:
+  _target_: src.loss.VQALoss
+  use_soft_labels: True  # VQA v2 soft binary CE (see vqa_loss.py)
+
+trainer:
+  log_step: 20
+  # Progress-bar behavior:
+  #   on    -> always show tqdm (default, matches the original behavior)
+  #   auto  -> show tqdm on TTY, disable when stdout is piped (e.g. Kaggle Python cell)
+  #   off   -> never show tqdm
+  progress_bar: on
+  n_epochs: 3
+  # Iteration-based training (epoch_len iterations per "epoch").
+  # For real VQA v2: consider increasing to 5000-10000 per "epoch".
+  epoch_len: 1000
+  # All VQA tensor fields that must be moved to device before forward pass.
+  device_tensors:
+    - "visual_features"
+    - "question_input_ids"
+    - "question_attention_mask"
+    - "graph_node_features"
+    - "graph_adj"
+    - "graph_node_types"
+    - "answer_scores"
+    - "labels"
+  resume_from: null
+  device: auto
+  override: False
+  # Monitor validation VQA accuracy to save the best checkpoint.
+  monitor: "max val_VQA_Accuracy"
+  save_period: 1
+  early_stop: 3
+  save_dir: "saved"
+  seed: 42
+  skip_oom: True
+  max_grad_norm: 1.0

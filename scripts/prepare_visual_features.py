@@ -8,7 +8,7 @@ Expected output format:
 
 This script does NOT extract features from images. It only converts
 already-extracted features into the HDF5 format expected by the runtime
-datasets (VCR / GQA).
+datasets.
 
 DEVIATION FROM PAPER:
     The paper uses a specific object detector and feature extractor whose
@@ -21,8 +21,8 @@ DEVIATION FROM PAPER:
       3. An existing HDF5 file (re-key to match expected format)
 
     The expected feature dimension is 2048 (ResNet-based bottom-up features).
-    If your features have a different dimension, update src/configs/model/vqa_gnn.yaml
-    (d_visual) and src/configs/datasets/vqa.yaml (d_visual) accordingly.
+    If your features have a different dimension, update the model and dataset
+    configs accordingly.
 
 Supported input formats:
     --format tsv    TSV file from the bottom-up-attention official release.

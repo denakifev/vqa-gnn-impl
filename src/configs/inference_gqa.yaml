@@ -10,7 +10,7 @@
 #       datasets=gqa_eval \
 #       datasets.val.data_dir=data/gqa \
 #       datasets.val.answer_vocab_path=data/gqa/gqa_answer_vocab.json \
-#       inferencer.from_pretrained=saved/gqa_baseline/model_best.pth
+#       inferencer.from_pretrained=saved/gqa_kaggle_paper_aligned/model_best.pth
 
 defaults:
   - model: vqa_gnn_gqa
@@ -33,7 +33,7 @@ inferencer:
   device: auto
   save_path: "gqa_preds"
   seed: 42
-  from_pretrained: "saved/gqa_baseline/model_best.pth"
+  from_pretrained: "saved/gqa_kaggle_paper_aligned/model_best.pth"
   # `skip_model_load=True` bypasses the checkpoint requirement — used for
   # demo/dry-run. Declared here so plain override syntax works:
   #   inferencer.skip_model_load=True

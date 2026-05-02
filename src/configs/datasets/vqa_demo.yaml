@@ -1,0 +1,29 @@
+# DEMO dataset config for VQA-GNN smoke testing.
+#
+# Generates synthetic random data. No real VQA data is required.
+# WARNING: This config does NOT reproduce paper results.
+# It is intended only for validating that the training pipeline runs end-to-end.
+#
+# Use the 'vqa' dataset config for actual experiments.
+
+train:
+  _target_: src.datasets.VQADemoDataset
+  num_samples: 200
+  num_answers: 3129
+  max_question_len: 20
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  d_kg: 300
+  seed: 42
+
+val:
+  _target_: src.datasets.VQADemoDataset
+  num_samples: 100
+  num_answers: 3129
+  max_question_len: 20
+  num_visual_nodes: 36
+  max_kg_nodes: 30
+  d_visual: 2048
+  d_kg: 300
+  seed: 43

@@ -125,26 +125,11 @@ class Inferencer(BaseTrainer):
             for met in self.metrics["inference"]:
                 metrics.update(met.name, met(**batch))
 
-        # Save predictions to disk.
-        # Two modes are supported:
-        #   VCR: logits [B*n_candidates, 1], answer_label [B]
-        #        Detected by presence of "n_candidates" in batch.
-        #   GQA / standard: logits [B, num_answers], labels [B]
-        if "n_candidates" in batch:
-            # VCR 4-way multiple choice: reshape to [B, 4], argmax over candidates
-            n_cand = batch["n_candidates"]
-            B = batch["answer_label"].size(0)
-            scores = batch["logits"].view(B, n_cand)   # [B, 4]
-            pred_labels = scores.argmax(dim=-1)         # [B]
-            gt_labels = batch["answer_label"]           # [B]
-            batch_size = B
-            sample_ids = batch.get("annot_ids")
-        else:
-            # GQA / standard: argmax over answer vocabulary
-            batch_size = batch["logits"].shape[0]
-            pred_labels = batch["logits"].argmax(dim=-1)   # [B]
-            gt_labels = batch["labels"]                     # [B]
-            sample_ids = batch.get("question_id")
+        # GQA / standard classification: logits [B, num_answers], labels [B].
+        batch_size = batch["logits"].shape[0]
+        pred_labels = batch["logits"].argmax(dim=-1)
+        gt_labels = batch["labels"]
+        sample_ids = batch.get("question_id")
 
         current_id = batch_idx * batch_size
 
@@ -161,10 +146,6 @@ class Inferencer(BaseTrainer):
                 "label": label,
             }
             if sample_ids is not None and i < len(sample_ids):
-                # Persist the sample identifier alongside the prediction so
-                # downstream evaluators (e.g. scripts/eval_vcr_qar.py) can
-                # join paired Q→A and QA→R runs by a stable key instead of
-                # by disk order.
                 output["sample_id"] = sample_ids[i]
 
             if self.save_path is not None:

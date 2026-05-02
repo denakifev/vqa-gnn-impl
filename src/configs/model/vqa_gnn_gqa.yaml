@@ -8,8 +8,10 @@ d_visual: 2048
 #             AND --d-kg used in scripts/prepare_gqa_data.py
 d_kg: 600
 
-# Hidden dimension (matches RoBERTa-large: 1024)
-d_hidden: 1024
+# Hidden dimension for the graph/fusion stack.
+# Kaggle practical default: 512 keeps the relation-aware GNN light while the
+# frozen RoBERTa-large encoder still provides paper-aligned question features.
+d_hidden: 512
 
 # Number of dense GAT layers (paper: 3)
 num_gnn_layers: 3
@@ -20,7 +22,7 @@ num_heads: 8
 # GQA answer vocabulary size for the paper-aligned setup.
 # GQA is an open-ended classification task: the model outputs a
 # distribution over num_answers classes (no candidate expansion).
-# This is fundamentally different from VCR (candidate scoring, output dim=1).
+# The model is a direct classifier over the fixed GQA answer vocabulary.
 #
 # Build with: python scripts/prepare_gqa_data.py answer-vocab \
 #   --questions train_balanced_questions.json val_balanced_questions.json \
@@ -41,15 +43,17 @@ num_answers: 1842
 # After restoring a private Kaggle package, override `model.num_relations`
 # to the value reported by `gqa_relation_vocab.json::relation_count_total`
 # if it differs.
-# Setting 0 disables relation awareness (ablation only; not paper-faithful).
+# Setting 0 disables relation awareness (ablation only; less paper-aligned).
 num_relations: 624
 
 # Dropout rate
 dropout: 0.1
 
-# Text encoder (RoBERTa-large, paper-aligned default)
+# Text encoder (RoBERTa-large, paper-aligned default).
+# Frozen by default for Kaggle practicality; unfreeze only when you have a
+# larger GPU budget.
 text_encoder_name: "roberta-large"
-freeze_text_encoder: False
+freeze_text_encoder: True
 
 # Relation awareness:
 # GQAVQAGNNModel consumes `graph_edge_types` through every dense GAT

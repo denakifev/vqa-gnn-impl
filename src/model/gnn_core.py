@@ -1,15 +1,13 @@
 """
 Shared GNN primitives for VQA-GNN (arXiv:2205.11501).
 
-This module contains the graph and text encoding building blocks that are
-genuinely common to both the VCR and GQA stacks:
+This module contains the graph and text encoding building blocks used by
+the GQA stack:
 
   DenseGATLayer       Dense multi-head Graph Attention Layer.
   HFQuestionEncoder   HuggingFace-backed question/context encoder.
 
-Both VCRVQAGNNModel (src.model.vcr_model) and GQAVQAGNNModel
-(src.model.gqa_model) import from here. Nothing in this module is
-task-specific.
+GQAVQAGNNModel imports from here. Nothing in this module is task-specific.
 
 Deviation from paper:
   - DenseGATLayer uses dense adjacency matrices (no torch_geometric).
@@ -21,9 +19,9 @@ Deviation from paper:
     `num_relations` > 0 constructor flag. When enabled and an
     `edge_types` tensor is passed to forward(), the layer adds a learned
     per-(head, relation) scalar bias to the pre-softmax attention logits.
-    This is the minimal paper-faithful injection of typed scene-graph
-    relations into message passing. When `num_relations=0` (VCR stack)
-    the layer is bit-for-bit identical to the previous implementation.
+    This is the minimal paper-aligned injection of typed scene-graph
+    relations into message passing. When `num_relations=0` the layer is
+    bit-for-bit identical to the untyped implementation.
   - HFQuestionEncoder defaults to 'roberta-large' as the closest public
     checkpoint to what the paper describes.
 """
@@ -61,8 +59,7 @@ class DenseGATLayer(nn.Module):
             dropout (float): dropout probability.
             num_relations (int): size of the typed-edge vocabulary. If 0,
                 the layer ignores edge types entirely and behaves exactly
-                like the baseline dense GAT (this path is used by the VCR
-                stack, where relation ids are not available). If > 0, a
+                like the baseline dense GAT. If > 0, a
                 learned per-(head, relation) scalar bias is added to the
                 attention logits whenever an `edge_types` tensor is passed
                 to forward(). The embedding is zero-initialized so relation
@@ -170,8 +167,7 @@ class HFQuestionEncoder(nn.Module):
 
     Outputs the [CLS] token representation projected to d_hidden.
 
-    Used by both VCR (encodes [question; candidate] pairs) and GQA
-    (encodes the question alone).
+    Used by the GQA model to encode the question.
     """
 
     def __init__(

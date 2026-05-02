@@ -83,12 +83,16 @@ def get_dataloaders(config, device):
         # otherwise fall back to the default template collate_fn.
         batch_collate_fn = getattr(dataset, "collate_fn", default_collate_fn)
 
+        shuffle = (dataset_partition == "train") and not getattr(
+            dataset, "disable_dataloader_shuffle", False
+        )
+
         partition_dataloader = instantiate(
             config.dataloader,
             dataset=dataset,
             collate_fn=batch_collate_fn,
             drop_last=(dataset_partition == "train"),
-            shuffle=(dataset_partition == "train"),
+            shuffle=shuffle,
             worker_init_fn=set_worker_seed,
         )
         dataloaders[dataset_partition] = partition_dataloader

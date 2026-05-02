@@ -56,5 +56,7 @@ val:
   d_kg: 600
   text_encoder_name: "roberta-large"
   instance_transforms: ${transforms.instance_transforms.inference}
+  # Kaggle-practical validation subset. Set to null for a full val pass.
+  limit: 10000
   expect_graph_edge_types: True
   strict_graph_schema: True

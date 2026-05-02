@@ -2,7 +2,7 @@
 #
 # Uses the lightweight GQA demo path so `python inference.py` has a valid
 # default config. Task-specific evaluation should still use explicit
-# `--config-name inference_gqa|inference_vcr`.
+# `--config-name inference_gqa`.
 
 defaults:
   - inference_gqa
