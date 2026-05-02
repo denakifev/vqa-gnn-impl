@@ -12,6 +12,7 @@ from src.utils.init_utils import (
     set_random_seed,
     setup_saving_and_logging,
 )
+from src.utils.optim import normalize_optimizer_param_groups
 
 warnings.filterwarnings("ignore", category=UserWarning)
 patch_hydra_argparse_compat()
@@ -53,6 +54,7 @@ def main(config):
     # build optimizer, learning rate scheduler
     if config.get("optimizer_param_groups") is not None:
         trainable_params = instantiate(config.optimizer_param_groups, model=model)
+        trainable_params = normalize_optimizer_param_groups(trainable_params)
     else:
         trainable_params = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = instantiate(config.optimizer, params=trainable_params)

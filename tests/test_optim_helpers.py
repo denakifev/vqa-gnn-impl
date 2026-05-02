@@ -1,9 +1,11 @@
+from omegaconf import ListConfig
 import torch
 from torch import nn
 
 from src.utils.optim import (
     build_linear_warmup_cosine_scheduler,
     make_gqa_optimizer_param_groups,
+    normalize_optimizer_param_groups,
 )
 
 
@@ -62,3 +64,19 @@ def test_build_linear_warmup_cosine_scheduler_warms_up_then_decays():
     assert lrs[0] < lrs[1]
     assert max(lrs) == lrs[1]
     assert lrs[-1] < lrs[2]
+
+
+def test_normalize_optimizer_param_groups_makes_adamw_happy():
+    model = _TinyGQAModel()
+    groups = make_gqa_optimizer_param_groups(
+        model,
+        encoder_lr=2e-5,
+        decoder_lr=2e-4,
+        weight_decay=1e-2,
+    )
+    wrapped = ListConfig(content=groups, flags={"allow_objects": True})
+    normalized = normalize_optimizer_param_groups(wrapped)
+
+    optimizer = torch.optim.AdamW(normalized, lr=2e-4)
+
+    assert len(optimizer.param_groups) == 4

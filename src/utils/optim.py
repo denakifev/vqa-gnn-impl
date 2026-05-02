@@ -1,5 +1,6 @@
 import math
 
+from omegaconf import DictConfig, ListConfig
 from torch.optim.lr_scheduler import LambdaLR
 
 
@@ -69,3 +70,16 @@ def build_linear_warmup_cosine_scheduler(
         return min_lr_scale + (1.0 - min_lr_scale) * cosine
 
     return LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+
+def normalize_optimizer_param_groups(params):
+    """
+    Convert OmegaConf containers returned through Hydra into plain Python
+    lists/dicts so torch.optim can consume param groups safely.
+    """
+
+    if isinstance(params, DictConfig):
+        return {key: normalize_optimizer_param_groups(value) for key, value in params.items()}
+    if isinstance(params, ListConfig):
+        return [normalize_optimizer_param_groups(value) for value in params]
+    return params
