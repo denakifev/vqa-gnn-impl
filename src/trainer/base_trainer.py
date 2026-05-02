@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import os
 import sys
 
 import torch
@@ -491,6 +492,29 @@ class BaseTrainer:
         for metric_name in metric_tracker.keys():
             self.writer.add_scalar(f"{metric_name}", metric_tracker.avg(metric_name))
 
+    @staticmethod
+    def _safe_torch_save(state, path: str) -> None:
+        """
+        Save a checkpoint via a temporary file and atomic replace.
+
+        Kaggle sometimes throws `inline_container` / iostream errors while
+        writing large zip-based checkpoints directly to the final path. The
+        legacy serialization path is more robust there, and the atomic replace
+        avoids leaving behind a partially-written target file.
+        """
+
+        tmp_path = f"{path}.tmp"
+        try:
+            torch.save(
+                state,
+                tmp_path,
+                _use_new_zipfile_serialization=False,
+            )
+            os.replace(tmp_path, path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
     def _save_checkpoint(self, epoch, save_best=False, only_best=False):
         """
         Save the checkpoints.
@@ -514,13 +538,13 @@ class BaseTrainer:
         }
         filename = str(self.checkpoint_dir / f"checkpoint-epoch{epoch}.pth")
         if not (only_best and save_best):
-            torch.save(state, filename)
+            self._safe_torch_save(state, filename)
             if self.config.writer.log_checkpoints:
                 self.writer.add_checkpoint(filename, str(self.checkpoint_dir.parent))
             self.logger.info(f"Saving checkpoint: {filename} ...")
         if save_best:
             best_path = str(self.checkpoint_dir / "model_best.pth")
-            torch.save(state, best_path)
+            self._safe_torch_save(state, best_path)
             if self.config.writer.log_checkpoints:
                 self.writer.add_checkpoint(best_path, str(self.checkpoint_dir.parent))
             self.logger.info("Saving current best: model_best.pth ...")
