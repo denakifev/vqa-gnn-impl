@@ -48,18 +48,22 @@ Visual Genome/GQA features, textual scene-graph nodes, typed relation ids
 `baseline_gqa.yaml` и `baseline_vqa.yaml` настроены как практичные стартовые
 профили:
 
-- `model.freeze_text_encoder: true`
+- `baseline_gqa`: split LR (`2e-5` encoder / `2e-4` multimodal stack)
+- `baseline_gqa`: `model.freeze_text_encoder: false`
+- `baseline_gqa`: `model.num_gnn_layers: 5`
+- `baseline_gqa`: linear warmup + cosine decay
 - `model.d_hidden: 512`
 - `dataloader.batch_size: 4`
 - `dataloader.num_workers: 2`
-- `trainer.n_epochs: 3`
-- `trainer.epoch_len: 1000`
+- `baseline_gqa`: `trainer.n_epochs: 6`
+- `baseline_gqa`: `trainer.epoch_len: 4000`
+- `baseline_gqa`: `trainer.max_grad_norm: 5.0`
 - `datasets.val.limit: 10000`
 - `writer.mode: offline`
 
-Это намеренная engineering approximation под Kaggle. Для более дорогого run
-можно увеличивать `d_hidden`, `batch_size`, `epoch_len`, `n_epochs`, снимать
-`datasets.val.limit` и размораживать text encoder.
+Это всё ещё engineering approximation под Kaggle, а не полная paper
+reproduction. Но активный GQA baseline теперь ближе к статье по optimizer /
+scheduler / depth / text finetuning, сохраняя при этом практичный runtime.
 
 ## GQA Data State
 

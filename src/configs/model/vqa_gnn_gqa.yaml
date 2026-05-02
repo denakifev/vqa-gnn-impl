@@ -9,12 +9,12 @@ d_visual: 2048
 d_kg: 600
 
 # Hidden dimension for the graph/fusion stack.
-# Kaggle practical default: 512 keeps the relation-aware GNN light while the
-# frozen RoBERTa-large encoder still provides paper-aligned question features.
+# Kaggle practical default: 512 keeps the relation-aware GNN light while still
+# allowing a paper-closer optimization recipe around the RoBERTa-L encoder.
 d_hidden: 512
 
-# Number of dense GAT layers (paper: 3)
-num_gnn_layers: 3
+# Number of dense GAT layers (paper: 5)
+num_gnn_layers: 5
 
 # Attention heads per GAT layer
 num_heads: 8
@@ -50,10 +50,9 @@ num_relations: 624
 dropout: 0.1
 
 # Text encoder (RoBERTa-large, paper-aligned default).
-# Frozen by default for Kaggle practicality; unfreeze only when you have a
-# larger GPU budget.
+# The active GQA baseline now finetunes it with a smaller LR than the GNN.
 text_encoder_name: "roberta-large"
-freeze_text_encoder: True
+freeze_text_encoder: False
 
 # Relation awareness:
 # GQAVQAGNNModel consumes `graph_edge_types` through every dense GAT

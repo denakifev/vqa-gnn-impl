@@ -1,6 +1,10 @@
 # Training config for VQA-GNN on GQA task (arXiv:2205.11501).
 # This is the single supported paper-aligned approximation path.
-# It is intentionally Kaggle-practical, not a strict equation reproduction.
+# It stays Kaggle-practical, but now moves closer to the paper by using:
+#   - 5 GNN layers
+#   - unfrozen RoBERTa-L
+#   - split learning rates (encoder vs multimodal stack)
+#   - linear warmup + cosine decay
 #
 # GQA: open-ended VQA on Visual Genome images with compositional questions.
 # Answer space: 1842 classes (paper target for GQA).
@@ -46,22 +50,30 @@ writer:
 
 optimizer:
   _target_: torch.optim.AdamW
-  lr: 1e-4
+  lr: 2e-4
+  weight_decay: 1e-2
+
+optimizer_param_groups:
+  _target_: src.utils.optim.make_gqa_optimizer_param_groups
+  encoder_lr: 2e-5
+  decoder_lr: 2e-4
   weight_decay: 1e-2
 
 lr_scheduler:
-  _target_: torch.optim.lr_scheduler.StepLR
-  gamma: 0.8
-  step_size: ${trainer.epoch_len}
+  _target_: src.utils.optim.build_linear_warmup_cosine_scheduler
+  n_epochs: ${trainer.n_epochs}
+  epoch_len: ${trainer.epoch_len}
+  warmup_ratio: 0.3
+  min_lr_scale: 0.0
 
 loss_function:
   _target_: src.loss.GQALoss
 
 trainer:
-  log_step: 20
+  log_step: 200
   progress_bar: on
-  n_epochs: 3
-  epoch_len: 1000
+  n_epochs: 6
+  epoch_len: 4000
   device_tensors:
     - "visual_features"
     - "question_input_ids"
@@ -76,8 +88,8 @@ trainer:
   override: False
   monitor: "max val_GQA_Accuracy"
   save_period: 1
-  early_stop: 3
+  early_stop: 2
   save_dir: "saved"
   seed: 42
   skip_oom: True
-  max_grad_norm: 1.0
+  max_grad_norm: 5.0
