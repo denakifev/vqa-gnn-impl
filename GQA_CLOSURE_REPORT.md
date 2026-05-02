@@ -6,6 +6,12 @@
 practical Kaggle training experiments. Numeric training results are still
 `not validated yet`.
 
+Repository scope note:
+
+- GQA is the primary benchmark.
+- VQA-2 is an auxiliary extension path.
+- the removed third benchmark is outside active repository scope.
+
 ## Runnable Path
 
 | Layer | Class / config |

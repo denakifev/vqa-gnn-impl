@@ -3,6 +3,12 @@
 Authoritative data contracts for the active GQA and VQA-2 paths. Runtime
 errors and config comments link back here.
 
+Repository scope:
+
+- GQA main
+- VQA-2 auxiliary
+- no removed benchmark in active scope
+
 ## GQA Strict Package Layout
 
 ```text

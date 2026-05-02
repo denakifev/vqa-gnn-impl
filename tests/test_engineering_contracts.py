@@ -175,7 +175,7 @@ class TestGQADataContract:
         assert "expect_graph_edge_types" in msg
 
     def test_missing_edge_types_allowed_with_explicit_opt_in(self, tmp_path, monkeypatch, caplog):
-        """Explicit `expect_graph_edge_types=False` accepts legacy artifact with a warning."""
+        """Explicit `expect_graph_edge_types=False` accepts older artifacts with a warning."""
         from src.datasets import GQADataset
 
         self._load_local_tokenizer(monkeypatch)
@@ -339,12 +339,12 @@ class TestImportSurface:
 
     def test_dense_gat_layer_reexport_consistent(self):
         """`DenseGATLayer` must be the same class whether imported from the shared
-        core or the legacy `vqa_gnn` module — tests still import it from
+        core or the monolithic `vqa_gnn` module — tests still import it from
         `src.model.vqa_gnn`."""
         from src.model.gnn_core import DenseGATLayer as core
-        from src.model.vqa_gnn import DenseGATLayer as legacy
+        from src.model.vqa_gnn import DenseGATLayer as reexported
 
-        assert core is legacy, "DenseGATLayer must be a single class, re-exported"
+        assert core is reexported, "DenseGATLayer must be a single class, re-exported"
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +374,7 @@ class TestGQAModelConfigContract:
         return cfg
 
     def test_baseline_gqa_targets_gqa_model(self):
-        """`baseline_gqa` must instantiate `GQAVQAGNNModel`, not the legacy class."""
+        """`baseline_gqa` must instantiate `GQAVQAGNNModel`, not the monolithic class."""
         cfg = self._compose("baseline_gqa", [])
         assert cfg.model._target_ == "src.model.GQAVQAGNNModel"
 

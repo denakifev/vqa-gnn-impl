@@ -10,6 +10,12 @@ extension и `not validated yet` относительно реальных train
 Проект не является `paper reproduced` и не является `fully paper-faithful`.
 Реальные training/eval paper numbers отсутствуют.
 
+## Project Mode
+
+- `GQA` = primary benchmark and main training path
+- `VQA-2` = auxiliary validated extension path
+- removed third benchmark outside active repository scope
+
 ## Active Paths
 
 GQA, основной paper-aligned path:
@@ -83,8 +89,8 @@ Validated GQA data/runtime contract:
 
 ## VQA-2 Data State
 
-VQA-2 path восстановлен из legacy-кода и подключён к активным `train.py` /
-`inference.py`. Реальный VQA-2 package в этом репозитории сейчас
+VQA-2 path подключён к активным `train.py` / `inference.py`. Реальный VQA-2
+package в этом репозитории сейчас
 `not validated yet`.
 
 Expected VQA-2 layout:
@@ -114,6 +120,19 @@ Runtime contract:
 - graph node types: `long[67]`
 - answer scores: `float32[3129]`
 - output logits: `float32[B, 3129]`
+
+Kaggle symlink setup:
+
+```bash
+bash scripts/setup_vqa_kaggle_links.sh \
+  --dataset-dir /kaggle/input/datasets/daakifev/vqa-gnn-data \
+  --visual-features /kaggle/input/datasets/daakifev/vqa-gnn-visual-features/all_features.h5 \
+  --target-dir /kaggle/working/data/vqa
+```
+
+Это создаст expected runtime layout под `data/vqa` через symlinks, чтобы не
+держать длинный блок `mkdir` / `ln -sf` в ноутбуке. Без аргументов скрипт
+использует эти же Kaggle пути по умолчанию.
 
 ## Kaggle Smoke
 
@@ -228,8 +247,10 @@ For file/schema-only validation, add `--skip-runtime-check`.
 
 ## Active Documents
 
+- [PROJECT_SCOPE.md](PROJECT_SCOPE.md) — explicit repository scope.
+- [ARCHITECTURE_SPLIT.md](ARCHITECTURE_SPLIT.md) — active architecture split.
 - [GAP_ANALYSIS.md](GAP_ANALYSIS.md) — limitations, deviations, Kaggle risks.
-- [DATA_CONTRACTS.md](DATA_CONTRACTS.md) — strict GQA data contract.
+- [DATA_CONTRACTS.md](DATA_CONTRACTS.md) — GQA and VQA-2 data contracts.
 - [GQA_CLOSURE_REPORT.md](GQA_CLOSURE_REPORT.md) — итог GQA engineering-фазы.
 
 ## Claim Discipline

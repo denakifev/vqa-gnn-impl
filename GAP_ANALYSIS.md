@@ -8,6 +8,12 @@
 Kaggle-лимитах. GQA сохраняет `paper-aligned approximation`; VQA-2 является
 coursework extension и не должен подаваться как результат статьи.
 
+Active repository mode:
+
+- GQA main
+- VQA-2 auxiliary
+- no removed benchmark in active scope
+
 ## Implemented / Validated
 
 - GQA 1842-way classification: `implemented`, `validated`.

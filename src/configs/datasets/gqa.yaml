@@ -39,7 +39,7 @@ train:
   #                                 on d_kg mismatch / missing edge types /
   #                                 missing required datasets.
   #
-  # Set `expect_graph_edge_types: False` to explicitly accept legacy artifacts
+  # Set `expect_graph_edge_types: False` to explicitly accept older artifacts
   # that predate typed edges. See DATA_CONTRACTS.md.
   expect_graph_edge_types: True
   strict_graph_schema: True

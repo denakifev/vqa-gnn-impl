@@ -31,9 +31,17 @@ GQA/VQA-2-focused VQA-GNN в этом репозитории.
 Активные документы:
 
 - [README.md](README.md) — текущий статус, команды, data state.
+- [PROJECT_SCOPE.md](PROJECT_SCOPE.md) — explicit repository scope.
+- [ARCHITECTURE_SPLIT.md](ARCHITECTURE_SPLIT.md) — active architecture split.
 - [GAP_ANALYSIS.md](GAP_ANALYSIS.md) — limitations, deviations, Kaggle risks.
 - [DATA_CONTRACTS.md](DATA_CONTRACTS.md) — GQA and VQA-2 data contracts.
 - [GQA_CLOSURE_REPORT.md](GQA_CLOSURE_REPORT.md) — итог GQA engineering-фазы.
+
+Repository mode must stay explicit:
+
+- GQA main
+- VQA-2 auxiliary
+- no removed benchmark in active scope
 
 ## Рабочие Статусы
 

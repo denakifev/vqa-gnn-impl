@@ -152,7 +152,7 @@ class GQADataset(Dataset):
                 mapped into the provided answer vocabulary.
             expect_graph_edge_types (bool): if True, require `graph_edge_types`
                 to be present in every graph HDF5 group. Set to False to
-                accept legacy artifacts produced by an older preprocessing
+                accept older artifacts produced by an older preprocessing
                 path that did not store typed edges (edge types will be
                 zero-filled). This is a data-contract toggle, not a silent
                 fallback — an explicit config decision is required.
@@ -298,7 +298,7 @@ class GQADataset(Dataset):
 
         Old artifacts without attrs remain loadable; new artifacts get stricter
         consistency checks to catch data/config mismatches early. A dedicated
-        sample-level probe (`_validate_graph_sample_contract`) covers legacy
+        sample-level probe (`_validate_graph_sample_contract`) covers older
         artifacts that lack these attrs altogether.
         """
         visual_num_boxes = self._visual_h5.attrs.get("num_boxes")
@@ -358,7 +358,7 @@ class GQADataset(Dataset):
         """
         Probe the first graph HDF5 entry and fail fast on contract violations.
 
-        Legacy artifacts (older GQA pipeline) are missing the file-level attrs
+        Older artifacts (older GQA pipeline) are missing the file-level attrs
         that `_validate_h5_metadata` checks. This sample-level probe catches
         the common mismatches regardless of whether attrs are present:
 
@@ -425,7 +425,7 @@ class GQADataset(Dataset):
                 f"    (a) rebuild graphs with the current pipeline to emit typed\n"
                 f"        edges:  python scripts/prepare_gqa_data.py "
                 f"knowledge-graphs ...\n"
-                f"    (b) accept legacy untyped artifacts explicitly by setting\n"
+                f"    (b) accept older untyped artifacts explicitly by setting\n"
                 f"        datasets.train.expect_graph_edge_types=False "
                 f"datasets.val.expect_graph_edge_types=False\n"
                 f"        (edge types will be zero-filled; `not paper-faithful yet`)."
@@ -684,4 +684,3 @@ def _pad_or_trim_2d(t: torch.Tensor, size: int) -> torch.Tensor:
     padded = torch.zeros(size, size, dtype=t.dtype)
     padded[:cur, :cur] = t
     return padded
-
