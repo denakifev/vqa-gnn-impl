@@ -57,8 +57,8 @@ def main(config):
         trainable_params = normalize_optimizer_param_groups(trainable_params)
     else:
         trainable_params = filter(lambda p: p.requires_grad, model.parameters())
-    optimizer = instantiate(config.optimizer, params=trainable_params)
-    lr_scheduler = instantiate(config.lr_scheduler, optimizer=optimizer)
+    optimizer = instantiate(config.optimizer, params=trainable_params, _convert_="all")
+    lr_scheduler = instantiate(config.lr_scheduler, optimizer=optimizer, _convert_="all")
 
     # epoch_len = number of iterations for iteration-based training
     # epoch_len = None or len(dataloader) for epoch-based training

@@ -1,3 +1,5 @@
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
 from omegaconf import ListConfig
 import torch
 from torch import nn
@@ -78,5 +80,28 @@ def test_normalize_optimizer_param_groups_makes_adamw_happy():
     normalized = normalize_optimizer_param_groups(wrapped)
 
     optimizer = torch.optim.AdamW(normalized, lr=2e-4)
+
+    assert len(optimizer.param_groups) == 4
+
+
+def test_hydra_instantiate_optimizer_with_convert_all_accepts_param_groups():
+    model = _TinyGQAModel()
+    groups = make_gqa_optimizer_param_groups(
+        model,
+        encoder_lr=2e-5,
+        decoder_lr=2e-4,
+        weight_decay=1e-2,
+    )
+    wrapped = ListConfig(content=groups, flags={"allow_objects": True})
+    normalized = normalize_optimizer_param_groups(wrapped)
+    optimizer_cfg = OmegaConf.create(
+        {
+            "_target_": "torch.optim.AdamW",
+            "lr": 2e-4,
+            "weight_decay": 1e-2,
+        }
+    )
+
+    optimizer = instantiate(optimizer_cfg, params=normalized, _convert_="all")
 
     assert len(optimizer.param_groups) == 4

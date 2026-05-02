@@ -2,6 +2,7 @@ from abc import abstractmethod
 import sys
 
 import torch
+from omegaconf import OmegaConf
 from numpy import inf
 from torch.nn.utils import clip_grad_norm_
 from tqdm.auto import tqdm
@@ -509,7 +510,7 @@ class BaseTrainer:
             "optimizer": self.optimizer.state_dict(),
             "lr_scheduler": self.lr_scheduler.state_dict(),
             "monitor_best": self.mnt_best,
-            "config": self.config,
+            "config": OmegaConf.to_container(self.config, resolve=False),
         }
         filename = str(self.checkpoint_dir / f"checkpoint-epoch{epoch}.pth")
         if not (only_best and save_best):
@@ -538,7 +539,11 @@ class BaseTrainer:
         """
         resume_path = str(resume_path)
         self.logger.info(f"Loading checkpoint: {resume_path} ...")
-        checkpoint = torch.load(resume_path, self.device)
+        checkpoint = torch.load(
+            resume_path,
+            map_location=self.device,
+            weights_only=False,
+        )
         self.start_epoch = checkpoint["epoch"] + 1
         self.mnt_best = checkpoint["monitor_best"]
 
@@ -584,7 +589,11 @@ class BaseTrainer:
             self.logger.info(f"Loading model weights from: {pretrained_path} ...")
         else:
             print(f"Loading model weights from: {pretrained_path} ...")
-        checkpoint = torch.load(pretrained_path, self.device)
+        checkpoint = torch.load(
+            pretrained_path,
+            map_location=self.device,
+            weights_only=False,
+        )
 
         if checkpoint.get("state_dict") is not None:
             self.model.load_state_dict(checkpoint["state_dict"])
