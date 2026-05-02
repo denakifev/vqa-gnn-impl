@@ -48,8 +48,8 @@ Visual Genome/GQA features, textual scene-graph nodes, typed relation ids
 `baseline_gqa.yaml` и `baseline_vqa.yaml` настроены как практичные стартовые
 профили:
 
-- `baseline_gqa`: split LR (`2e-5` encoder / `2e-4` multimodal stack)
-- `baseline_gqa`: `model.freeze_text_encoder: false`
+- `baseline_gqa`: frozen `roberta-large` question encoder
+- `baseline_gqa`: decoder LR `1e-4` with split-LR infra preserved for follow-up runs
 - `baseline_gqa`: `model.num_gnn_layers: 5`
 - `baseline_gqa`: linear warmup + cosine decay
 - `model.d_hidden: 512`
@@ -58,6 +58,8 @@ Visual Genome/GQA features, textual scene-graph nodes, typed relation ids
 - `baseline_gqa`: `trainer.n_epochs: 6`
 - `baseline_gqa`: `trainer.epoch_len: 4000`
 - `baseline_gqa`: `trainer.max_grad_norm: 5.0`
+- `baseline_gqa`: reproducible subset controls via
+  `datasets.{train,val}.{limit,shuffle_index,shuffle_seed}`
 - `datasets.val.limit: 10000`
 - `writer.mode: offline`
 

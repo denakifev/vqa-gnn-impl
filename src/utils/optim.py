@@ -83,3 +83,19 @@ def normalize_optimizer_param_groups(params):
     if isinstance(params, ListConfig):
         return [normalize_optimizer_param_groups(value) for value in params]
     return params
+
+
+def resolve_effective_epoch_len(configured_epoch_len, train_dataloader) -> int | None:
+    """
+    Resolve the epoch length to use for step-based schedulers.
+
+    When the trainer runs in epoch-based mode (`epoch_len=None`), schedulers
+    still need a concrete number of steps per epoch. We derive it from the
+    finite train dataloader length.
+    """
+
+    if configured_epoch_len is not None:
+        return int(configured_epoch_len)
+    if train_dataloader is None:
+        return None
+    return len(train_dataloader)

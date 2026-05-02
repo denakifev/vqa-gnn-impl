@@ -63,6 +63,7 @@ def _write_gqa_fixture(
     num_visual_nodes: int = 4,
     max_kg_nodes: int = 3,
     d_visual: int = 8,
+    num_samples: int = 2,
 ) -> tuple[Path, Path]:
     """Build a minimal GQA directory layout under tmp_path. Returns (data_dir, vocab_path)."""
     import h5py
@@ -74,7 +75,10 @@ def _write_gqa_fixture(
 
     vocab_path = data_dir / "gqa_answer_vocab.json"
     _make_answer_vocab(vocab_path)
-    qids = _make_gqa_questions(data_dir / "questions" / "train_balanced_questions.json")
+    qids = _make_gqa_questions(
+        data_dir / "questions" / "train_balanced_questions.json",
+        num_samples=num_samples,
+    )
 
     n_total = num_visual_nodes + 1 + max_kg_nodes
     with h5py.File(data_dir / "visual_features" / "train_features.h5", "w") as f:
@@ -275,6 +279,40 @@ class TestGQADataContract:
         )
         with pytest.raises(ValueError, match="d_kg=300"):
             _ = ds[0]
+
+    def test_random_subset_is_reproducible_for_a_fixed_seed(self, tmp_path, monkeypatch):
+        from src.datasets import GQADataset
+
+        self._load_local_tokenizer(monkeypatch)
+        data_dir, vocab_path = _write_gqa_fixture(
+            tmp_path,
+            d_kg=300,
+            include_edge_types=True,
+            num_samples=8,
+        )
+
+        common_kwargs = dict(
+            partition="train",
+            data_dir=str(data_dir),
+            answer_vocab_path=str(vocab_path),
+            d_visual=8,
+            d_kg=300,
+            num_visual_nodes=4,
+            max_kg_nodes=3,
+            max_question_len=8,
+            limit=4,
+            shuffle_index=True,
+        )
+        ds_a = GQADataset(**common_kwargs, shuffle_seed=123)
+        ds_b = GQADataset(**common_kwargs, shuffle_seed=123)
+        ds_c = GQADataset(**common_kwargs, shuffle_seed=124)
+
+        subset_a = [row["question_id"] for row in ds_a._index]
+        subset_b = [row["question_id"] for row in ds_b._index]
+        subset_c = [row["question_id"] for row in ds_c._index]
+
+        assert subset_a == subset_b
+        assert subset_a != subset_c
 
 
 # ---------------------------------------------------------------------------

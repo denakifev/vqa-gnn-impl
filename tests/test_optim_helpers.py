@@ -8,6 +8,7 @@ from src.utils.optim import (
     build_linear_warmup_cosine_scheduler,
     make_gqa_optimizer_param_groups,
     normalize_optimizer_param_groups,
+    resolve_effective_epoch_len,
 )
 
 
@@ -105,3 +106,10 @@ def test_hydra_instantiate_optimizer_with_convert_all_accepts_param_groups():
     optimizer = instantiate(optimizer_cfg, params=normalized, _convert_="all")
 
     assert len(optimizer.param_groups) == 4
+
+
+def test_resolve_effective_epoch_len_uses_loader_len_for_epoch_based_mode():
+    loader = [object(), object(), object()]
+
+    assert resolve_effective_epoch_len(None, loader) == 3
+    assert resolve_effective_epoch_len(125, loader) == 125

@@ -1,9 +1,9 @@
 # Training config for VQA-GNN on GQA task (arXiv:2205.11501).
 # This is the single supported paper-aligned approximation path.
-# It stays Kaggle-practical, but now moves closer to the paper by using:
+# The active default is a Kaggle-practical controlled-subset baseline:
 #   - 5 GNN layers
-#   - unfrozen RoBERTa-L
-#   - split learning rates (encoder vs multimodal stack)
+#   - frozen RoBERTa-L
+#   - reproducible train/val subset support via dataset limits + seeds
 #   - linear warmup + cosine decay
 #
 # GQA: open-ended VQA on Visual Genome images with compositional questions.
@@ -50,13 +50,13 @@ writer:
 
 optimizer:
   _target_: torch.optim.AdamW
-  lr: 2e-4
+  lr: 1e-4
   weight_decay: 1e-2
 
 optimizer_param_groups:
   _target_: src.utils.optim.make_gqa_optimizer_param_groups
-  encoder_lr: 2e-5
-  decoder_lr: 2e-4
+  encoder_lr: 1e-5
+  decoder_lr: 1e-4
   weight_decay: 1e-2
 
 lr_scheduler:

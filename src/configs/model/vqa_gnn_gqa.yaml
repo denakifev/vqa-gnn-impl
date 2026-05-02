@@ -50,9 +50,10 @@ num_relations: 624
 dropout: 0.1
 
 # Text encoder (RoBERTa-large, paper-aligned default).
-# The active GQA baseline now finetunes it with a smaller LR than the GNN.
+# The active Kaggle baseline keeps it frozen for a cheaper and more stable
+# controlled-subset regime. Unfreeze only for follow-up experiments.
 text_encoder_name: "roberta-large"
-freeze_text_encoder: False
+freeze_text_encoder: True
 
 # Relation awareness:
 # GQAVQAGNNModel consumes `graph_edge_types` through every dense GAT

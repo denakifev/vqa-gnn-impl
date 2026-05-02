@@ -130,6 +130,7 @@ class GQADataset(Dataset):
         instance_transforms=None,
         limit: Optional[int] = None,
         shuffle_index: bool = False,
+        shuffle_seed: int = 42,
         strict_answer_vocab: bool = True,
         expect_graph_edge_types: bool = True,
         strict_graph_schema: bool = True,
@@ -148,6 +149,8 @@ class GQADataset(Dataset):
             instance_transforms: unused; kept for API compatibility.
             limit (int|None): if set, use only first `limit` samples.
             shuffle_index (bool): shuffle samples before applying limit.
+            shuffle_seed (int): random seed used when selecting a shuffled
+                subset so train/val subsets remain reproducible across runs.
             strict_answer_vocab (bool): fail if a labeled sample cannot be
                 mapped into the provided answer vocabulary.
             expect_graph_edge_types (bool): if True, require `graph_edge_types`
@@ -173,6 +176,7 @@ class GQADataset(Dataset):
         self.strict_answer_vocab = strict_answer_vocab
         self.expect_graph_edge_types = expect_graph_edge_types
         self.strict_graph_schema = strict_graph_schema
+        self.shuffle_seed = int(shuffle_seed)
 
         # Load answer vocabulary
         vocab_path = Path(answer_vocab_path)
@@ -201,8 +205,8 @@ class GQADataset(Dataset):
         self._index = self._build_index(limit=early_limit)
 
         if shuffle_index:
-            random.seed(42)
-            random.shuffle(self._index)
+            rng = random.Random(self.shuffle_seed)
+            rng.shuffle(self._index)
         if limit is not None:
             self._index = self._index[:limit]
 

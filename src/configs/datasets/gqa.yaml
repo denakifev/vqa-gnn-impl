@@ -30,7 +30,9 @@ train:
   d_kg: 600
   text_encoder_name: "roberta-large"
   instance_transforms: ${transforms.instance_transforms.train}
+  limit: null
   shuffle_index: True
+  shuffle_seed: 42
   # Data-contract toggles. Defaults match the paper-aligned pipeline.
   #
   # expect_graph_edge_types=True  → graph HDF5 must carry `graph_edge_types`
@@ -58,5 +60,7 @@ val:
   instance_transforms: ${transforms.instance_transforms.inference}
   # Kaggle-practical validation subset. Set to null for a full val pass.
   limit: 10000
+  shuffle_index: False
+  shuffle_seed: 42
   expect_graph_edge_types: True
   strict_graph_schema: True
