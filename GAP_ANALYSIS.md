@@ -26,6 +26,9 @@ Active repository mode:
 - VQA-2 coursework path (`VQADataset`, `VQAGNNModel`, `VQALoss`,
   `VQAAccuracy`, `baseline_vqa`): `implemented`, `not validated yet`.
 - Demo and engineering tests: `runtime-valid`.
+- Recorded practical baseline observations:
+  GQA controlled subset `val_GQA_Accuracy = 0.20`,
+  VQA-2 classic baseline `val_VQA_Accuracy = 0.54`.
 
 ## Remaining GQA Gaps
 

@@ -67,6 +67,15 @@ Visual Genome/GQA features, textual scene-graph nodes, typed relation ids
 reproduction. Но активный GQA baseline теперь ближе к статье по optimizer /
 scheduler / depth / text finetuning, сохраняя при этом практичный runtime.
 
+## Recorded Metrics
+
+Current practical baseline observations:
+
+- GQA controlled frozen subset baseline (`train=100k`, `val=7k`): `val_GQA_Accuracy = 0.20`
+- VQA-2 classic baseline: `val_VQA_Accuracy = 0.54`
+
+See [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) for the recorded run context.
+
 ## GQA Data State
 
 Strict GQA package был локально собран, uploaded to Kaggle и затем validated

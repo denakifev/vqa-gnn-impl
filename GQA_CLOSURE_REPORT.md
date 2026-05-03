@@ -97,6 +97,8 @@ Notes:
 - `model_best.pth` is intended to be overwritten in-place, not accumulated.
 - For Kaggle stability, checkpoint saving was later hardened with atomic temp-file
   writes and legacy PyTorch serialization.
+- Observed controlled-subset validation accuracy for this run family:
+  `val_GQA_Accuracy = 0.20`.
 
 ## Remaining Items
 
