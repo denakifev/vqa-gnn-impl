@@ -9,6 +9,7 @@ from src.utils.optim import (
     make_gqa_optimizer_param_groups,
     normalize_optimizer_param_groups,
     resolve_effective_epoch_len,
+    resolve_lr_scheduler_kwargs,
 )
 
 
@@ -113,3 +114,37 @@ def test_resolve_effective_epoch_len_uses_loader_len_for_epoch_based_mode():
 
     assert resolve_effective_epoch_len(None, loader) == 3
     assert resolve_effective_epoch_len(125, loader) == 125
+
+
+def test_resolve_lr_scheduler_kwargs_sets_epoch_len_for_custom_scheduler():
+    cfg = OmegaConf.create(
+        {
+            "_target_": "src.utils.optim.build_linear_warmup_cosine_scheduler",
+            "n_epochs": 6,
+            "epoch_len": None,
+            "warmup_ratio": 0.3,
+            "min_lr_scale": 0.0,
+        }
+    )
+    optimizer = torch.optim.AdamW(_TinyGQAModel().parameters(), lr=1e-3)
+
+    kwargs = resolve_lr_scheduler_kwargs(cfg, optimizer, 125)
+
+    assert kwargs["optimizer"] is optimizer
+    assert kwargs["epoch_len"] == 125
+
+
+def test_resolve_lr_scheduler_kwargs_sets_step_size_for_steplr():
+    cfg = OmegaConf.create(
+        {
+            "_target_": "torch.optim.lr_scheduler.StepLR",
+            "gamma": 0.8,
+            "step_size": None,
+        }
+    )
+    optimizer = torch.optim.AdamW(_TinyGQAModel().parameters(), lr=1e-3)
+
+    kwargs = resolve_lr_scheduler_kwargs(cfg, optimizer, 250)
+
+    assert kwargs["optimizer"] is optimizer
+    assert kwargs["step_size"] == 250

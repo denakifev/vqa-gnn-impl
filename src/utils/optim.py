@@ -99,3 +99,28 @@ def resolve_effective_epoch_len(configured_epoch_len, train_dataloader) -> int |
     if train_dataloader is None:
         return None
     return len(train_dataloader)
+
+
+def resolve_lr_scheduler_kwargs(scheduler_cfg, optimizer, effective_epoch_len):
+    """
+    Build instantiate kwargs for LR schedulers while keeping config compatibility
+    across GQA/VQA paths.
+
+    - custom schedulers may declare `epoch_len`
+    - classic PyTorch schedulers like StepLR may instead need `step_size`
+    - when these fields are null because trainer.epoch_len=null, we substitute
+      the finite dataloader-derived epoch length
+    """
+
+    kwargs = {"optimizer": optimizer}
+
+    if scheduler_cfg is None:
+        return kwargs
+
+    if "epoch_len" in scheduler_cfg:
+        kwargs["epoch_len"] = effective_epoch_len
+
+    if "step_size" in scheduler_cfg and scheduler_cfg.get("step_size") is None:
+        kwargs["step_size"] = effective_epoch_len
+
+    return kwargs

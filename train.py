@@ -12,7 +12,11 @@ from src.utils.init_utils import (
     set_random_seed,
     setup_saving_and_logging,
 )
-from src.utils.optim import normalize_optimizer_param_groups, resolve_effective_epoch_len
+from src.utils.optim import (
+    normalize_optimizer_param_groups,
+    resolve_effective_epoch_len,
+    resolve_lr_scheduler_kwargs,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 patch_hydra_argparse_compat()
@@ -62,12 +66,12 @@ def main(config):
         config.trainer.get("epoch_len"),
         dataloaders["train"],
     )
-    lr_scheduler = instantiate(
+    lr_scheduler_kwargs = resolve_lr_scheduler_kwargs(
         config.lr_scheduler,
-        optimizer=optimizer,
-        epoch_len=effective_epoch_len,
-        _convert_="all",
+        optimizer,
+        effective_epoch_len,
     )
+    lr_scheduler = instantiate(config.lr_scheduler, _convert_="all", **lr_scheduler_kwargs)
 
     # epoch_len = number of iterations for iteration-based training
     # epoch_len = None or len(dataloader) for epoch-based training

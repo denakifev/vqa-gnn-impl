@@ -52,6 +52,52 @@ Runtime sanity against restored real Kaggle data:
 - loss finite: `7.326373`;
 - random-init loss close to `ln(1842) = 7.519`.
 
+## Recorded Runs
+
+### 2026-05-03 — Controlled GQA Subset Run
+
+Intent:
+
+- fixed random `train` subset: `100000`
+- fixed random `val` subset: `7000`
+- frozen text encoder baseline
+- full subset epochs via `trainer.epoch_len=null`
+- Kaggle online logging
+
+Command used on Kaggle:
+
+```bash
+cd /kaggle/working/repo/ && COMET_API_KEY="<set via Kaggle Secrets or env>" python train.py --config-name baseline_gqa \
+  datasets=gqa \
+  datasets.train.data_dir=/kaggle/input/datasets/daakifev/gqa-gnn-data \
+  datasets.train.answer_vocab_path=/kaggle/input/datasets/daakifev/gqa-gnn-data/gqa_answer_vocab.json \
+  datasets.val.data_dir=/kaggle/input/datasets/daakifev/gqa-gnn-data \
+  datasets.val.answer_vocab_path=/kaggle/input/datasets/daakifev/gqa-gnn-data/gqa_answer_vocab.json \
+  datasets.train.text_encoder_name=/kaggle/input/datasets/daakifev/hf-roberta-large \
+  datasets.val.text_encoder_name=/kaggle/input/datasets/daakifev/hf-roberta-large \
+  model.text_encoder_name=/kaggle/input/datasets/daakifev/hf-roberta-large \
+  dataloader.batch_size=32 \
+  datasets.train.limit=100000 \
+  datasets.train.shuffle_index=true \
+  datasets.train.shuffle_seed=42 \
+  datasets.val.limit=7000 \
+  datasets.val.shuffle_index=true \
+  datasets.val.shuffle_seed=42 \
+  trainer.epoch_len=null \
+  trainer.n_epochs=15 \
+  trainer.save_period=100 \
+  writer.run_name=gqa_subset100k_frozen_run \
+  writer.mode=online \
+  trainer.save_dir=/kaggle/working/saved \
+  trainer.override=true
+```
+
+Notes:
+
+- `model_best.pth` is intended to be overwritten in-place, not accumulated.
+- For Kaggle stability, checkpoint saving was later hardened with atomic temp-file
+  writes and legacy PyTorch serialization.
+
 ## Remaining Items
 
 - Real GQA train/eval numbers: `not validated yet`.
