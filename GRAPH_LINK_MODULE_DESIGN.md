@@ -1,8 +1,8 @@
-# Graph Link Module Design
+# Дизайн Graph-Link Module
 
 Статус: `implemented`, `runtime-valid`.
 
-## 1. Motivation
+## 1. Мотивация
 
 Текущие GQA и VQA-2 baselines уже содержат общий runtime graph:
 
@@ -17,7 +17,7 @@
 межграфовая связь между visual scene nodes и textual/kg nodes может дать
 дополнительный полезный обмен сигналом без полного architectural redesign.
 
-## 2. What The Module Does
+## 2. Что делает модуль
 
 Новый модуль: `SparseGraphLinkModule` в
 [`src/model/graph_link.py`](src/model/graph_link.py).
@@ -42,7 +42,7 @@
 `baseline_repr` и `baseline_logits` как раньше, а graph-link branch добавляет
 отдельный auxiliary answer signal только на этапе финального logit fusion.
 
-## 3. Where It Is Inserted
+## 3. Где он встроен
 
 Точка встройки для обоих active paths:
 
@@ -61,44 +61,44 @@
 То есть модуль больше не стоит как pre-GNN overwrite. Это теперь
 **late-fusion auxiliary branch**.
 
-## 4. Supported Modes
+## 4. Поддерживаемые режимы
 
-### GQA Baseline
+### GQA baseline
 
 - config: `baseline_gqa`
 - `model.enable_graph_link_module = False`
 - baseline behavior сохраняется
 
-### GQA Graph-link enabled
+### GQA с включённым graph-link
 
 - config: `graph_link_gqa`
 - `model.enable_graph_link_module = True`
 - baseline backbone остаётся trainable
 
-### GQA Frozen baseline + graph-link
+### GQA: frozen baseline + graph-link
 
 - config: `graph_link_gqa_frozen`
 - `model.enable_graph_link_module = True`
 - `freeze_policy.freeze_all_baseline = True`
 - trainable остаётся в основном graph-link module
 
-### VQA-2 Baseline
+### VQA-2 baseline
 
 - config: `baseline_vqa`
 - `model.enable_graph_link_module = False`
 
-### VQA-2 Graph-link enabled
+### VQA-2 с включённым graph-link
 
 - config: `graph_link_vqa`
 - `model.enable_graph_link_module = True`
 
-### VQA-2 Frozen baseline + graph-link
+### VQA-2: frozen baseline + graph-link
 
 - config: `graph_link_vqa_frozen`
 - `model.enable_graph_link_module = True`
 - `freeze_policy.freeze_all_baseline = True`
 
-## 5. Baseline vs Module-Enabled Comparison
+## 5. Сравнение baseline vs module-enabled
 
 Контролируемое сравнение задаётся так:
 
@@ -118,7 +118,7 @@
 
 явным и воспроизводимым.
 
-## 6. Freeze Regime
+## 6. Freeze-режим
 
 Freeze policy реализован в
 [`src/utils/model_freeze.py`](src/utils/model_freeze.py)
@@ -142,7 +142,7 @@ Freeze policy реализован в
 - `freeze_all_baseline = True`
 - `freeze_graph_link_module = False`
 
-## 7. Remaining Limits / Risks
+## 7. Оставшиеся ограничения и риски
 
 - Текущий GQA path не содержит отдельный внешний ConceptNet graph:
   модуль связывает visual nodes с текущими textual/kg nodes из active runtime
@@ -152,10 +152,14 @@ Freeze policy реализован в
 - baseline adjacency matrix не расширяется новыми typed edges; cross-graph
   branch работает как auxiliary late-fusion path, а не как полная graph
   rewiring.
-- Реальный gain по quality пока `not validated yet`; эта сессия готовит
-  чистую experimental surface, а не claim о metric improvement.
+- На controlled GQA subset уже наблюдался сильный положительный сигнал
+  (`0.20 -> 0.30+`), но broader validation beyond this protocol is still
+  `not validated yet`.
+- На VQA-2 текущая late-fusion / logit-fusion версия тоже дала положительный,
+  но существенно более слабый сигнал (`0.54 -> 0.55`), что делает GQA
+  главным носителем исследовательского эффекта на данном этапе.
 
-## 8. Recorded Difficulties
+## 8. Зафиксированные трудности
 
 - Первая graph-link реализация оказалась слишком агрессивной как pre-GNN
   intervention и регрессировала на VQA-2 относительно baseline.

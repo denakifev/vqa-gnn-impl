@@ -1,4 +1,4 @@
-# VQA-GNN: Practical GQA + VQA-2 Baselines
+# VQA-GNN: практичные GQA + VQA-2 baseline’ы
 
 Статус репозитория: `partially validated baseline`.
 
@@ -12,13 +12,13 @@ numbers.
 Проект не является `paper reproduced` и не является `fully paper-faithful`.
 Реальные training/eval paper numbers отсутствуют.
 
-## Project Mode
+## Режим проекта
 
-- `GQA` = primary benchmark and main training path
-- `VQA-2` = auxiliary validated extension path
-- removed third benchmark outside active repository scope
+- `GQA` = основной benchmark и основной training path
+- `VQA-2` = вспомогательный validated extension path
+- удалённый третий benchmark находится вне активного scope репозитория
 
-## Active Paths
+## Активные пути
 
 GQA, основной paper-aligned path:
 
@@ -51,7 +51,7 @@ VQA-2, coursework extension:
 Visual Genome/GQA features, textual scene-graph nodes, typed relation ids
 через `graph_edge_types`, RoBERTa-large question encoder.
 
-## Kaggle Profile
+## Kaggle-профиль
 
 `baseline_gqa.yaml` и `baseline_vqa.yaml` настроены как практичные стартовые
 профили:
@@ -75,7 +75,7 @@ Visual Genome/GQA features, textual scene-graph nodes, typed relation ids
 reproduction. Но активный GQA baseline теперь ближе к статье по optimizer /
 scheduler / depth / text finetuning, сохраняя при этом практичный runtime.
 
-## Graph-Link Research Module
+## Исследовательский Graph-Link Module
 
 На GQA path теперь добавлен отдельный additive research module:
 
@@ -111,21 +111,23 @@ scheduler / depth / text finetuning, сохраняя при этом практ
 Freeze policy применяется через `freeze_policy` block в train config и
 обрабатывается в `src/utils/model_freeze.py`.
 
-## Recorded Metrics
+## Зафиксированные метрики
 
-Current practical baseline observations:
+Текущие зафиксированные practical baseline observations:
 
 - GQA controlled frozen subset baseline (`train=100k`, `val=7k`): `val_GQA_Accuracy = 0.20`
+- GQA graph-link controlled subset (`train=100k`, `val=7k`): `val_GQA_Accuracy = 0.30+`
 - VQA-2 classic baseline: `val_VQA_Accuracy = 0.54`
+- VQA-2 graph-link late-fusion run: `val_VQA_Accuracy = 0.55`
 
-See [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) for the recorded run context.
+Подробный контекст запусков см. в [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md).
 
-## GQA Data State
+## Состояние GQA-данных
 
 Strict GQA package был локально собран, uploaded to Kaggle и затем validated
 end-to-end against restored real Kaggle data.
 
-Validated GQA data/runtime contract:
+Проверенный GQA data/runtime contract:
 
 - `answer_to_idx` содержит `1842` entries, contiguous, coverage 100%.
 - relation vocab содержит `624` relation ids: 310 predicates + 4 specials.
@@ -146,13 +148,13 @@ Validated GQA data/runtime contract:
 восстановить private Kaggle dataset в expected layout или указать Hydra
 `datasets.*.data_dir` на mounted path.
 
-## VQA-2 Data State
+## Состояние VQA-2-данных
 
 VQA-2 path подключён к активным `train.py` / `inference.py`. Реальный VQA-2
 package в этом репозитории сейчас
 `not validated yet`.
 
-Expected VQA-2 layout:
+Ожидаемая структура VQA-2:
 
 ```text
 data/vqa/
@@ -171,7 +173,7 @@ data/vqa/
     └── val_graphs.h5
 ```
 
-Runtime contract:
+Runtime-contract:
 
 - visual features: `float32[36, 2048]`
 - KG node features: `float32[30, 300]`
@@ -180,7 +182,7 @@ Runtime contract:
 - answer scores: `float32[3129]`
 - output logits: `float32[B, 3129]`
 
-Kaggle symlink setup:
+Настройка Kaggle symlink:
 
 ```bash
 bash scripts/setup_vqa_kaggle_links.sh \
@@ -193,7 +195,7 @@ bash scripts/setup_vqa_kaggle_links.sh \
 держать длинный блок `mkdir` / `ln -sf` в ноутбуке. Без аргументов скрипт
 использует эти же Kaggle пути по умолчанию.
 
-## Kaggle Smoke
+## Kaggle smoke-проверка
 
 ```bash
 OFFLINE=1 \
@@ -204,7 +206,7 @@ EPOCH_LEN=50 \
 bash scripts/run_kaggle_smoke_test.sh
 ```
 
-## Practical Train
+## Практический train
 
 GQA:
 
@@ -245,7 +247,7 @@ python train.py --config-name baseline_vqa datasets=vqa \
 trainer.n_epochs=1 trainer.epoch_len=50 datasets.val.limit=1000
 ```
 
-## Local Demo
+## Локальный demo-режим
 
 ```bash
 .venv/bin/python train.py --config-name baseline_gqa \
@@ -263,9 +265,9 @@ trainer.n_epochs=1 trainer.epoch_len=50 datasets.val.limit=1000
 
 Demo dataset synthetic и не является результатом статьи.
 
-## Validation
+## Проверка
 
-Engineering tests:
+Инженерные тесты:
 
 ```bash
 .venv/bin/python -m pytest -q
@@ -304,7 +306,7 @@ VQA-2 data validation:
 
 For file/schema-only validation, add `--skip-runtime-check`.
 
-## Active Documents
+## Активные документы
 
 - [PROJECT_SCOPE.md](PROJECT_SCOPE.md) — explicit repository scope.
 - [ARCHITECTURE_SPLIT.md](ARCHITECTURE_SPLIT.md) — active architecture split.
@@ -312,7 +314,7 @@ For file/schema-only validation, add `--skip-runtime-check`.
 - [DATA_CONTRACTS.md](DATA_CONTRACTS.md) — GQA and VQA-2 data contracts.
 - [GQA_CLOSURE_REPORT.md](GQA_CLOSURE_REPORT.md) — итог GQA engineering-фазы.
 
-## Claim Discipline
+## Дисциплина claim’ов
 
 Разрешённые status tokens:
 

@@ -1,35 +1,35 @@
-# Architecture Split
+# Разделение архитектуры
 
-This repository uses a simplified two-path architecture.
+Этот репозиторий использует упрощённую двухконтурную архитектуру.
 
-Current architecture split:
+Текущее разделение архитектуры:
 
-- `GQA` is the primary benchmark and the main paper-inspired runtime path.
-- `VQA-2` is the auxiliary extension path built on the same training and
-  inference framework.
-- the removed third benchmark is outside active repository scope.
+- `GQA` — основной benchmark и главный paper-inspired runtime path.
+- `VQA-2` — вспомогательный extension path на том же training/inference
+  framework.
+- удалённый третий benchmark находится вне активного scope репозитория.
 
-## Active Runtime Paths
+## Активные runtime-path’ы
 
 GQA:
 
-- model: `src/model/gqa_model.py::GQAVQAGNNModel`
-- dataset: `src/datasets/gqa_dataset.py::GQADataset`
+- модель: `src/model/gqa_model.py::GQAVQAGNNModel`
+- датасет: `src/datasets/gqa_dataset.py::GQADataset`
 - collate: `src/datasets/gqa_collate.py::gqa_collate_fn`
 - train config: `src/configs/baseline_gqa.yaml`
 - inference config: `src/configs/inference_gqa.yaml`
 
 VQA-2:
 
-- model: `src/model/vqa_gnn.py::VQAGNNModel`
-- dataset: `src/datasets/vqa_dataset.py::VQADataset`
+- модель: `src/model/vqa_gnn.py::VQAGNNModel`
+- датасет: `src/datasets/vqa_dataset.py::VQADataset`
 - collate: `src/datasets/vqa_collate.py::vqa_collate_fn`
 - train config: `src/configs/baseline_vqa.yaml`
 - inference config: `src/configs/inference_vqa.yaml`
 
-## Shared Core
+## Общее ядро
 
-Shared primitives remain in:
+Общие примитивы остаются в:
 
 - `src/model/gnn_core.py`
 - `train.py`
@@ -37,12 +37,13 @@ Shared primitives remain in:
 - `src/trainer/`
 - `src/logger/`
 
-The shared core must stay task-agnostic. Task selection should happen through
-dataset/config/model wiring, not hidden conditionals in common modules.
+Общее ядро должно оставаться task-agnostic. Выбор задачи должен происходить
+через wiring dataset/config/model, а не через скрытые conditionals в общих
+модулях.
 
-## Scope Rule
+## Правило scope
 
-Any future repository narrative should use this framing:
+Любое дальнейшее описание репозитория должно использовать такую рамку:
 
 - GQA main
 - VQA-2 auxiliary

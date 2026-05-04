@@ -1,16 +1,33 @@
-# Experiment Log
+# Журнал экспериментов
 
-Дата актуализации: 2026-05-03.
+Дата актуализации: 2026-05-04.
 
 Этот файл фиксирует практические Kaggle baseline runs и наблюдённые метрики.
 Это не paper reproduction log и не full-val leaderboard. Если metric получена на
 subset, это указывается явно.
 
-## Recorded Baselines
+## Исторические вехи
 
-### GQA — Controlled Frozen Subset Baseline
+### GQA — ранние практические вехи до controlled R&D
 
-Observed status:
+Наблюдавшиеся практические вехи из ранних Kaggle-ориентированных GQA run’ов:
+
+- frozen baseline family: best observed `val_GQA_Accuracy ≈ 0.176`
+- unfrozen / paper-closer practical family: best observed
+  `val_GQA_Accuracy ≈ 0.190`
+
+Эти run’ы были полезны как диагностика оптимизации:
+
+- unfreezing the text path helped relative to the earliest frozen baseline;
+- however, those runs were still noisy and not ideal for controlled module
+  comparison;
+- they motivated the later switch to fixed subset protocol.
+
+## Зафиксированные baseline’ы
+
+### GQA — controlled frozen subset baseline
+
+Наблюдённый статус:
 
 - path: `baseline_gqa.yaml`
 - setup: frozen text encoder, relation-aware GQA model, reproducible random subsets
@@ -18,7 +35,7 @@ Observed status:
 - val subset: `7000`
 - observed `val_GQA_Accuracy`: `0.20`
 
-Reference command family:
+Опорное семейство команд:
 
 ```bash
 python train.py --config-name baseline_gqa \
@@ -46,30 +63,80 @@ python train.py --config-name baseline_gqa \
   trainer.override=true
 ```
 
-Interpretation:
+Интерпретация:
 
 - this is a controlled-subset metric, not a full-val claim;
 - use the same subsets when comparing architecture changes.
 
-### VQA-2 — Classic Baseline
+### GQA — run с Graph-Link и logit fusion
 
-Observed status:
+Наблюдённый статус:
+
+- path: `graph_link_gqa.yaml`
+- setup: same controlled subset family as the recorded GQA baseline
+- train subset: `100000`
+- val subset: `7000`
+- module regime:
+  - sparse question-conditioned inter-graph links
+  - bidirectional sparse cross-attention
+  - separate auxiliary graph-link answer head
+  - weighted logit fusion with the untouched baseline head
+- observed `val_GQA_Accuracy`: `0.30+` (approximately `0.31` on the recorded
+  run chart)
+
+Интерпретация:
+
+- this is the strongest controlled GQA signal observed so far in the repo;
+- relative to the recorded controlled baseline (`0.20`), this is a large
+  positive gain on the same experiment family;
+- this should still be described as a controlled-subset result, not as a full
+  paper reproduction claim.
+
+### VQA-2 — классический baseline
+
+Наблюдённый статус:
 
 - path: `baseline_vqa.yaml`
 - setup: classic frozen-text VQA baseline
 - observed `val_VQA_Accuracy`: `0.54`
 
-Notes:
+Примечания:
 
 - this metric is recorded as an observed practical baseline number;
 - exact subset/full-val scope should be kept aligned with the run logs when
   comparing later experiments.
 
-## Graph-Link Negative Results And Rewrite Notes
+### VQA-2 — Graph-Link с late logit fusion
 
-### VQA-2 — First Graph-Link Variant Regressed
+Наблюдённый статус:
 
-Observed status:
+- path: `graph_link_vqa.yaml`
+- comparison reference: `baseline_vqa.yaml`
+- module regime:
+  - sparse question-conditioned inter-graph links;
+  - bidirectional sparse cross-attention;
+  - separate auxiliary graph-link answer head;
+  - weighted logit fusion with the untouched baseline head
+- observed `val_VQA_Accuracy`: `0.55`
+  (примерно на `+0.01` выше зафиксированного baseline `0.54`)
+
+Интерпретация:
+
+- это уже не регрессия, а небольшой положительный сигнал;
+- эффект на VQA-2 заметно слабее, чем на GQA;
+- правдоподобная рабочая интерпретация состоит в том, что для VQA-2
+  controlled cross-graph reasoning может быть менее критичен, чем для GQA;
+- этот вывод стоит подавать как практическую гипотезу по текущему evidence,
+  а не как окончательное утверждение о свойствах датасета.
+- в сумме это означает, что текущее late-fusion / logit-fusion изменение
+  можно считать удачным: оно дало сильный сигнал на GQA и хотя бы небольшой
+  положительный сигнал на VQA-2.
+
+## Негативные результаты Graph-Link и заметки по переписыванию
+
+### VQA-2 — первая версия Graph-Link ухудшила результат
+
+Наблюдённый статус:
 
 - path family: `graph_link_vqa.yaml`, `graph_link_vqa_frozen.yaml`
 - comparison reference: `baseline_vqa.yaml`
@@ -78,7 +145,7 @@ Observed status:
 - early graph-link runs underperformed this baseline and, in one frozen-from-
   scratch setup, produced near-zero train accuracy
 
-What was learned:
+Что стало понятно:
 
 - the first graph-link implementation was too aggressive as a pre-GNN
   intervention;
@@ -90,7 +157,7 @@ What was learned:
 - full graph-link runs showed that the module was learnable, but the resulting
   extra capacity did not translate into better validation performance.
 
-Most likely causes recorded for future reporting:
+Наиболее вероятные причины, зафиксированные для будущего отчёта:
 
 1. The first graph-link variant started as a non-identity perturbation and
    could harm baseline node geometry from the first steps.
@@ -102,7 +169,7 @@ Most likely causes recorded for future reporting:
    trained baseline checkpoint; frozen-from-scratch results should not be used
    as evidence against the hypothesis.
 
-Follow-up action taken in the repo:
+Какие follow-up действия были сделаны в репозитории:
 
 - `src/model/graph_link.py` was rewritten into a more conservative,
   MAGIC-inspired implicit augmentation block:
@@ -117,17 +184,57 @@ Follow-up action taken in the repo:
   - final prediction uses weighted logit fusion instead of representation
     overwrite.
 
-Interpretation discipline:
+Дисциплина интерпретации:
 
 - these failed runs should be treated as valid negative experimental evidence
   about the *first* graph-link formulation, not as a final verdict on the
   broader hypothesis about controlled inter-graph integration.
 
-## Experimental Difficulties Recorded
+## Нарратив успехов и неудач
 
-The following difficulties should be kept in the protocol for later reporting.
+Это сжатая экспериментальная история, которую стоит нести дальше в отчёт.
 
-### Methodological difficulties
+### Что явно помогло
+
+1. Moving from ad hoc large-budget runs to a fixed subset protocol made
+   comparisons much cleaner.
+2. Treating GQA as the main benchmark and VQA-2 as auxiliary reduced
+   evaluation ambiguity.
+3. Preserving the baseline answer path and moving the new module into an
+   auxiliary branch improved stability.
+4. Replacing representation overwrite with:
+   - sparse cross-graph linking
+   - late auxiliary answer head
+   - weighted logit fusion
+   produced the first strong positive GQA signal (`0.30+` on the controlled
+   subset family).
+5. Та же late-fusion стратегия дала и положительный VQA-2 сигнал, хотя и
+   заметно меньшего масштаба (`0.54 -> 0.55`).
+
+### Что явно мешало
+
+1. Early pre-GNN node rewriting was too destructive.
+2. Frozen-from-scratch graph-link runs were methodologically invalid.
+3. Unmatched protocols between baseline and module runs created confusing
+   comparisons.
+4. VQA-2 was much less forgiving as a rapid proving ground for the first
+   graph-link formulation.
+
+### Текущая лучшая practical-картина
+
+- GQA controlled subset baseline: `0.20`
+- GQA graph-link controlled subset: `0.30+`
+- VQA-2 classic practical baseline: `0.54`
+- VQA-2 current graph-link late-fusion run: `0.55`
+- early VQA-2 graph-link formulations: negative / unstable relative to the
+  baseline, but the current late-fusion/logit-fusion variant recovered a
+  small positive gain
+
+## Зафиксированные экспериментальные трудности
+
+Следующие трудности стоит сохранить в протоколе для будущего отчёта.
+
+### Методологические трудности
 
 1. Controlled comparison required exact matching of:
    - train subset size
@@ -155,7 +262,7 @@ The following difficulties should be kept in the protocol for later reporting.
    to provide an immediate measurable gain. This created a recurring tradeoff
    between stability and effect size.
 
-### Engineering difficulties
+### Инженерные трудности
 
 1. Kaggle checkpoint saving for large runs was unstable under the default
    PyTorch zip serialization and required a hardened save path.
@@ -173,7 +280,7 @@ The following difficulties should be kept in the protocol for later reporting.
    - `shuffle_seed`
    so that repeated runs used the same data slices.
 
-### Current protocol lesson
+### Текущий урок по протоколу
 
 For future architectural experiments, the safest reporting order is:
 

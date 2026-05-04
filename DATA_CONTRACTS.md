@@ -1,15 +1,15 @@
-# Data Contracts
+# Контракты данных
 
-Authoritative data contracts for the active GQA and VQA-2 paths. Runtime
-errors and config comments link back here.
+Авторитетные data contracts для активных GQA и VQA-2 путей. Runtime-ошибки и
+комментарии в config должны ссылаться сюда.
 
-Repository scope:
+Scope репозитория:
 
 - GQA main
 - VQA-2 auxiliary
 - no removed benchmark in active scope
 
-## GQA Strict Package Layout
+## Структура strict GQA package
 
 ```text
 data/gqa/
@@ -31,7 +31,7 @@ data/gqa/
     └── val_knowledge_graphs_metadata.json
 ```
 
-## GQA Validated Values
+## Проверенные значения GQA
 
 | Field | Value |
 |---|---|
@@ -47,7 +47,7 @@ data/gqa/
 | graph attrs `conceptnet_used` | `False` |
 | graph attrs `fully_connected_fallback_used` | `False` |
 
-End-to-end evidence:
+End-to-end подтверждения:
 
 - train: `943000` questions, `72140` images, all imageIds covered;
 - val: `132062` questions, `10234` images, all imageIds covered;
@@ -55,7 +55,7 @@ End-to-end evidence:
 - runtime path validates
   `GQADataset -> gqa_collate_fn -> GQAVQAGNNModel(num_relations=624) -> GQALoss -> GQAAccuracy`.
 
-## GQA Runtime Batch Contract
+## GQA runtime batch contract
 
 | Key | Type / Shape |
 |---|---|
@@ -71,7 +71,7 @@ End-to-end evidence:
 
 `N_total = num_visual_nodes + 1 + max_kg_nodes = 201`.
 
-## GQA Source-Of-Truth Runtime Path
+## GQA source-of-truth runtime path
 
 | Layer | Class / file |
 |---|---|
@@ -84,12 +84,12 @@ End-to-end evidence:
 
 `GQAVQAGNNModel` consumes `graph_edge_types` through every `DenseGATLayer`
 when `num_relations > 0`. Setting `num_relations = 0` reverts to untyped GAT
-and is an ablation only.
+и используется только как ablation.
 
-## VQA-2 Package Layout
+## Структура VQA-2 package
 
-VQA-2 is a coursework extension in this repo. Its real-data package is
-`not validated yet`.
+VQA-2 в этом репозитории является coursework extension. Его real-data package
+пока `not validated yet`.
 
 ```text
 data/vqa/
@@ -108,7 +108,7 @@ data/vqa/
     └── val_graphs.h5
 ```
 
-## VQA-2 Runtime Batch Contract
+## VQA-2 runtime batch contract
 
 | Key | Type / Shape |
 |---|---|
@@ -124,7 +124,7 @@ data/vqa/
 
 `N_total = num_visual_nodes + 1 + max_kg_nodes = 67`.
 
-## VQA-2 Runtime Path
+## VQA-2 runtime path
 
 | Layer | Class / file |
 |---|---|
@@ -135,10 +135,10 @@ data/vqa/
 | Collate | `src/datasets/vqa_collate.py::vqa_collate_fn` |
 | Hydra config | `src/configs/baseline_vqa.yaml` |
 
-VQA-2 uses soft VQA labels (`answer_scores`) and binary
-cross-entropy-with-logits by default.
+VQA-2 по умолчанию использует soft VQA labels (`answer_scores`) и binary
+cross-entropy-with-logits.
 
-Validate a restored package with:
+Проверить восстановленный package можно так:
 
 ```bash
 .venv/bin/python scripts/validate_vqa_data.py \
@@ -148,7 +148,7 @@ Validate a restored package with:
   --text-encoder data/roberta-large
 ```
 
-## Known Approximations
+## Известные приближения
 
 - merged-graph DenseGAT fast path with relation-aware attention bias;
 - Kaggle default graph hidden width is `512`, not a claim of exact paper width;

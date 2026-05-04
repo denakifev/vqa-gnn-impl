@@ -56,8 +56,9 @@ text_encoder_name: "roberta-large"
 freeze_text_encoder: True
 
 # Additive sparse graph-link module.
-# When enabled, the model performs a question-conditioned top-k exchange
-# between visual scene nodes and textual/kg nodes before the baseline GNN.
+# When enabled, the model builds a question-conditioned sparse auxiliary
+# branch between visual scene nodes and textual/kg nodes and fuses its
+# contribution at the answer-logit level.
 enable_graph_link_module: False
 graph_link_top_k: 4
 graph_link_num_heads: 8

@@ -1,31 +1,30 @@
-# Project Scope
+# Область проекта
 
-Current active repository scope:
+Текущий активный scope репозитория:
 
-- `GQA` = primary benchmark and primary training path.
-- `VQA-2` = auxiliary validated extension path.
-- the removed third benchmark is outside active repository scope.
+- `GQA` = основной benchmark и основной training path.
+- `VQA-2` = вспомогательный validated extension path.
+- удалённый третий benchmark находится вне активного scope репозитория.
 
-What this means in practice:
+Что это значит на практике:
 
-- active docs, configs, tests, scripts, and comments must describe only GQA
-  and VQA-2 workflows;
-- the removed benchmark is not a supported benchmark, roadmap item,
-  training target, or next workstream in this repository;
-- future training and experiment work should start from GQA, then extend to
-  controlled GQA / VQA-2 comparisons.
+- активные docs, configs, tests, scripts и comments должны описывать только
+  GQA и VQA-2 workflows;
+- удалённый benchmark не является ни supported benchmark, ни roadmap item,
+  ни training target, ни следующим workstream в этом репозитории;
+- дальнейшая training и experiment work должна стартовать от GQA и затем
+  расширяться до controlled GQA / VQA-2 comparisons.
 
-Source-of-truth runtime paths:
+Базовые source-of-truth runtime-path’ы:
 
 - GQA:
   `GQADataset -> gqa_collate_fn -> GQAVQAGNNModel -> GQALoss -> GQAAccuracy`
 - VQA-2:
   `VQADataset -> vqa_collate_fn -> VQAGNNModel -> VQALoss -> VQAAccuracy`
 
-Status discipline:
+Дисциплина статусов:
 
-- GQA can be described as `paper-aligned approximation`.
-- VQA-2 must be described as an auxiliary validated extension path or
+- GQA можно описывать как `paper-aligned approximation`.
+- VQA-2 нужно описывать как auxiliary validated extension path или
   coursework extension.
-- the removed benchmark must not be described as active, supported, or
-  pending.
+- удалённый benchmark нельзя описывать как active, supported или pending.
