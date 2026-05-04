@@ -88,7 +88,14 @@ scheduler / depth / text finetuning, сохраняя при этом практ
 - visual scene nodes
 - textual/kg nodes
 
-перед baseline GNN stack.
+в отдельной late-fusion ветке.
+
+Текущая интеграция:
+
+- sparse link construction
+- bidirectional cross-attention
+- pooled `link_repr`
+- `concat([baseline_repr, link_repr]) + MLP` на финальном fusion stage
 
 Режимы:
 

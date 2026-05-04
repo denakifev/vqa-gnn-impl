@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,57 +7,65 @@ import torch.nn.functional as F
 
 class SparseGraphLinkModule(nn.Module):
     """
-    MAGIC-inspired implicit graph augmentation block.
+    Sparse cross-graph attention branch for late fusion.
 
-    Compared with the earlier aggressive pre-GNN linker, this variant is much
-    more conservative:
+    The module builds question-conditioned sparse links between visual scene
+    nodes and textual/kg nodes, applies bidirectional multi-head cross-attention
+    restricted to those links, and produces a pooled `link_repr`.
 
-    - cross-graph links are scored by cosine similarity in a shared space
-    - links are filtered by top-k and dynamic relevance thresholds
-    - the resulting heterogeneous graph is processed with a lightweight
-      2-layer graph-convolution style propagation
-    - outputs are injected through a learnable residual scale initialized at 0
-
-    The module therefore starts as an exact identity map and only deviates from
-    the baseline when training discovers useful cross-graph structure.
+    This branch does not rewrite baseline node states. It is meant to be fused
+    with the baseline graph representation later in the model.
     """
-
-    RELEVANCE_HIGH = 1.0
-    RELEVANCE_MEDIUM = 0.5
-    RELEVANCE_LOW = 0.0
 
     def __init__(
         self,
         d_hidden: int,
         top_k: int = 4,
+        num_heads: int = 8,
         dropout: float = 0.1,
         threshold_std_scale: float = 0.5,
     ):
         super().__init__()
         if top_k <= 0:
             raise ValueError(f"top_k must be positive, got {top_k}")
+        if d_hidden % num_heads != 0:
+            raise ValueError(
+                f"d_hidden ({d_hidden}) must be divisible by num_heads ({num_heads})"
+            )
 
         self.top_k = int(top_k)
+        self.num_heads = int(num_heads)
+        self.head_dim = d_hidden // num_heads
+        self.scale = self.head_dim**-0.5
         self.threshold_std_scale = float(threshold_std_scale)
 
         self.visual_score_proj = nn.Linear(d_hidden, d_hidden)
         self.kg_score_proj = nn.Linear(d_hidden, d_hidden)
         self.question_score_proj = nn.Linear(d_hidden, d_hidden)
 
-        self.gcn_linear1 = nn.Linear(d_hidden, d_hidden)
-        self.gcn_linear2 = nn.Linear(d_hidden, d_hidden)
+        self.scene_q = nn.Linear(d_hidden, d_hidden)
+        self.scene_k = nn.Linear(d_hidden, d_hidden)
+        self.scene_v = nn.Linear(d_hidden, d_hidden)
 
-        self.visual_out_proj = nn.Linear(d_hidden, d_hidden)
-        self.kg_out_proj = nn.Linear(d_hidden, d_hidden)
+        self.kg_q = nn.Linear(d_hidden, d_hidden)
+        self.kg_k = nn.Linear(d_hidden, d_hidden)
+        self.kg_v = nn.Linear(d_hidden, d_hidden)
 
-        self.visual_norm = nn.LayerNorm(d_hidden)
+        self.scene_out = nn.Linear(d_hidden, d_hidden)
+        self.kg_out = nn.Linear(d_hidden, d_hidden)
+
+        self.scene_norm = nn.LayerNorm(d_hidden)
         self.kg_norm = nn.LayerNorm(d_hidden)
-        self.graph_norm1 = nn.LayerNorm(d_hidden)
-        self.graph_norm2 = nn.LayerNorm(d_hidden)
+        self.question_norm = nn.LayerNorm(d_hidden)
 
-        # Conservative start: the module is initially an identity mapping.
-        self.visual_residual_scale = nn.Parameter(torch.tensor(0.0))
-        self.kg_residual_scale = nn.Parameter(torch.tensor(0.0))
+        self.scene_pool = nn.Linear(d_hidden, 1)
+        self.kg_pool = nn.Linear(d_hidden, 1)
+        self.link_proj = nn.Sequential(
+            nn.Linear(d_hidden * 3, d_hidden),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_hidden, d_hidden),
+        )
 
         self.dropout = nn.Dropout(dropout)
         self.last_stats = {}
@@ -68,6 +78,10 @@ class SparseGraphLinkModule(nn.Module):
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
 
+    def _reshape_heads(self, x: torch.Tensor) -> torch.Tensor:
+        bsz, num_nodes, _ = x.shape
+        return x.view(bsz, num_nodes, self.num_heads, self.head_dim).transpose(1, 2)
+
     @staticmethod
     def _masked_topk(
         scores: torch.Tensor,
@@ -79,14 +93,7 @@ class SparseGraphLinkModule(nn.Module):
         return topk_scores, topk_indices
 
     @staticmethod
-    def _batched_scatter(
-        values: torch.Tensor,
-        indices: torch.Tensor,
-        size: int,
-    ) -> torch.Tensor:
-        """
-        Scatter top-k row values back into a dense [B, Q, size] matrix.
-        """
+    def _batched_scatter(values: torch.Tensor, indices: torch.Tensor, size: int) -> torch.Tensor:
         dense = torch.zeros(
             values.shape[0],
             values.shape[1],
@@ -96,11 +103,11 @@ class SparseGraphLinkModule(nn.Module):
         )
         return dense.scatter(dim=-1, index=indices, src=values)
 
-    def _compute_thresholds(self, scores: torch.Tensor, valid_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        MAGIC-inspired dynamic thresholds using mean ± std * scale over the
-        valid candidate pool for each sample.
-        """
+    def _compute_thresholds(
+        self,
+        scores: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         masked_scores = scores.masked_fill(~valid_mask, 0.0)
         counts = valid_mask.sum(dim=(1, 2)).clamp_min(1).to(scores.dtype)
         mean = masked_scores.sum(dim=(1, 2)) / counts
@@ -126,12 +133,8 @@ class SparseGraphLinkModule(nn.Module):
 
         relevance = torch.where(
             high,
-            torch.full_like(selected_scores, self.RELEVANCE_HIGH),
-            torch.where(
-                medium,
-                torch.full_like(selected_scores, self.RELEVANCE_MEDIUM),
-                torch.full_like(selected_scores, self.RELEVANCE_LOW),
-            ),
+            torch.ones_like(selected_scores),
+            torch.where(medium, torch.full_like(selected_scores, 0.5), torch.zeros_like(selected_scores)),
         )
         stats = {
             "high_frac": float(high.float().mean().detach().cpu().item()),
@@ -169,7 +172,6 @@ class SparseGraphLinkModule(nn.Module):
 
         cross_weights = torch.maximum(vis_dense, kg_dense.transpose(1, 2))
         cross_weights = cross_weights * valid_pairs.to(cross_weights.dtype)
-
         stats = {
             "mean_cross_weight": float(cross_weights.mean().detach().cpu().item()),
             "visual_high_frac": vis_stats["high_frac"],
@@ -179,17 +181,49 @@ class SparseGraphLinkModule(nn.Module):
         }
         return cross_weights, stats
 
-    @staticmethod
-    def _normalize_adjacency(adj: torch.Tensor) -> torch.Tensor:
-        degree = adj.sum(dim=-1, keepdim=True).clamp_min(1e-6)
-        return adj / degree
+    def _sparse_cross_attention(
+        self,
+        query_nodes: torch.Tensor,
+        key_nodes: torch.Tensor,
+        edge_weights: torch.Tensor,
+        query_mask: torch.Tensor,
+        key_mask: torch.Tensor,
+        q_proj: nn.Linear,
+        k_proj: nn.Linear,
+        v_proj: nn.Linear,
+        out_proj: nn.Linear,
+        norm: nn.LayerNorm,
+    ) -> torch.Tensor:
+        q = self._reshape_heads(q_proj(query_nodes))
+        k = self._reshape_heads(k_proj(key_nodes))
+        v = self._reshape_heads(v_proj(key_nodes))
 
-    def _graph_conv(self, adj: torch.Tensor, x: torch.Tensor, linear: nn.Linear, norm: nn.LayerNorm) -> torch.Tensor:
-        propagated = torch.matmul(adj, x)
-        out = linear(propagated)
-        out = F.gelu(out)
+        attn = torch.matmul(q, k.transpose(-2, -1)) * self.scale
+        pair_mask = query_mask.unsqueeze(-1) & key_mask.unsqueeze(1)
+        sparse_mask = edge_weights > 0
+        full_mask = pair_mask & sparse_mask
+
+        attn = attn.masked_fill(~full_mask.unsqueeze(1), float("-inf"))
+        attn = F.softmax(attn, dim=-1)
+        attn = torch.nan_to_num(attn, nan=0.0, posinf=0.0, neginf=0.0)
+        attn = attn * edge_weights.unsqueeze(1)
+        attn = attn / attn.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+        attn = self.dropout(attn)
+
+        out = torch.matmul(attn, v)
+        out = out.transpose(1, 2).contiguous().view(query_nodes.shape[0], query_nodes.shape[1], -1)
+        out = out_proj(out)
         out = self.dropout(out)
-        return norm(out + x)
+        out = norm(query_nodes + out)
+        out = torch.where(query_mask.unsqueeze(-1), out, query_nodes)
+        return out
+
+    @staticmethod
+    def _masked_pool(nodes: torch.Tensor, mask: torch.Tensor, score_proj: nn.Linear) -> torch.Tensor:
+        scores = score_proj(nodes).squeeze(-1).masked_fill(~mask, float("-inf"))
+        weights = F.softmax(scores, dim=-1)
+        weights = torch.nan_to_num(weights, nan=0.0, posinf=0.0, neginf=0.0).unsqueeze(-1)
+        return (nodes * weights).sum(dim=1)
 
     def _record_stats(
         self,
@@ -204,8 +238,6 @@ class SparseGraphLinkModule(nn.Module):
             / float(max(cross_weights.shape[0] * num_visual * max(num_kg, 1), 1)),
             "kg_link_density": float(active_links.sum().detach().cpu().item())
             / float(max(cross_weights.shape[0] * num_kg * max(num_visual, 1), 1)),
-            "visual_residual_scale": float(torch.tanh(self.visual_residual_scale).detach().cpu().item()),
-            "kg_residual_scale": float(torch.tanh(self.kg_residual_scale).detach().cpu().item()),
             **extra_stats,
         }
 
@@ -216,7 +248,7 @@ class SparseGraphLinkModule(nn.Module):
         question_node: torch.Tensor,
         visual_mask: torch.Tensor | None = None,
         kg_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, dict]:
         bsz, num_visual, _ = visual_nodes.shape
         _, num_kg, _ = kg_nodes.shape
 
@@ -237,7 +269,7 @@ class SparseGraphLinkModule(nn.Module):
 
         q_bias = self.question_score_proj(question_node).unsqueeze(1)
         visual_query = F.normalize(
-            self.visual_norm(self.visual_score_proj(visual_nodes) + q_bias),
+            self.scene_norm(self.visual_score_proj(visual_nodes) + q_bias),
             dim=-1,
         )
         kg_query = F.normalize(
@@ -252,44 +284,36 @@ class SparseGraphLinkModule(nn.Module):
             kg_mask=kg_mask,
         )
 
-        n_total = num_visual + 1 + num_kg
-        adjacency = torch.zeros(
-            bsz,
-            n_total,
-            n_total,
-            dtype=visual_nodes.dtype,
-            device=visual_nodes.device,
+        scene_ctx = self._sparse_cross_attention(
+            query_nodes=visual_nodes,
+            key_nodes=kg_nodes,
+            edge_weights=cross_weights,
+            query_mask=visual_mask,
+            key_mask=kg_mask,
+            q_proj=self.scene_q,
+            k_proj=self.scene_k,
+            v_proj=self.scene_v,
+            out_proj=self.scene_out,
+            norm=self.scene_norm,
+        )
+        kg_ctx = self._sparse_cross_attention(
+            query_nodes=kg_nodes,
+            key_nodes=visual_nodes,
+            edge_weights=cross_weights.transpose(1, 2),
+            query_mask=kg_mask,
+            key_mask=visual_mask,
+            q_proj=self.kg_q,
+            k_proj=self.kg_k,
+            v_proj=self.kg_v,
+            out_proj=self.kg_out,
+            norm=self.kg_norm,
         )
 
-        question_idx = num_visual
-        kg_start = num_visual + 1
+        scene_repr = self._masked_pool(scene_ctx, visual_mask, self.scene_pool)
+        kg_repr = self._masked_pool(kg_ctx, kg_mask, self.kg_pool)
+        question_repr = self.question_norm(question_node)
 
-        adjacency[:, :num_visual, kg_start:] = cross_weights
-        adjacency[:, kg_start:, :num_visual] = cross_weights.transpose(1, 2)
-
-        adjacency[:, :num_visual, question_idx] = visual_mask.to(adjacency.dtype)
-        adjacency[:, question_idx, :num_visual] = visual_mask.to(adjacency.dtype)
-        adjacency[:, kg_start:, question_idx] = kg_mask.to(adjacency.dtype)
-        adjacency[:, question_idx, kg_start:] = kg_mask.to(adjacency.dtype)
-
-        adjacency = adjacency + torch.eye(n_total, device=adjacency.device, dtype=adjacency.dtype).unsqueeze(0)
-        adjacency = self._normalize_adjacency(adjacency)
-
-        graph_states = torch.cat([visual_nodes, question_node.unsqueeze(1), kg_nodes], dim=1)
-        graph_states = self._graph_conv(adjacency, graph_states, self.gcn_linear1, self.graph_norm1)
-        graph_states = self._graph_conv(adjacency, graph_states, self.gcn_linear2, self.graph_norm2)
-
-        visual_delta = self.visual_out_proj(graph_states[:, :num_visual])
-        kg_delta = self.kg_out_proj(graph_states[:, kg_start:])
-
-        visual_scale = torch.tanh(self.visual_residual_scale)
-        kg_scale = torch.tanh(self.kg_residual_scale)
-
-        updated_visual = visual_nodes + visual_scale * self.dropout(visual_delta)
-        updated_kg = kg_nodes + kg_scale * self.dropout(kg_delta)
-
-        updated_visual = torch.where(visual_mask.unsqueeze(-1), updated_visual, visual_nodes)
-        updated_kg = torch.where(kg_mask.unsqueeze(-1), updated_kg, kg_nodes)
+        link_repr = self.link_proj(torch.cat([scene_repr, question_repr, kg_repr], dim=-1))
 
         self._record_stats(
             cross_weights,
@@ -297,4 +321,4 @@ class SparseGraphLinkModule(nn.Module):
             num_kg=num_kg,
             extra_stats=extra_stats,
         )
-        return updated_visual, updated_kg
+        return link_repr, self.last_stats

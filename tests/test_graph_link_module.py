@@ -25,24 +25,23 @@ class TestSparseGraphLinkModule:
     def test_output_shapes(self):
         from src.model.graph_link import SparseGraphLinkModule
 
-        module = SparseGraphLinkModule(d_hidden=8, top_k=2, dropout=0.0)
+        module = SparseGraphLinkModule(d_hidden=8, top_k=2, num_heads=2, dropout=0.0)
         visual = torch.randn(2, 4, 8)
         kg = torch.randn(2, 3, 8)
         question = torch.randn(2, 8)
         visual_mask = torch.tensor([[1, 1, 1, 0], [1, 1, 1, 1]], dtype=torch.bool)
         kg_mask = torch.tensor([[1, 1, 0], [1, 1, 1]], dtype=torch.bool)
 
-        visual_out, kg_out = module(visual, kg, question, visual_mask=visual_mask, kg_mask=kg_mask)
+        link_repr, stats = module(visual, kg, question, visual_mask=visual_mask, kg_mask=kg_mask)
 
-        assert visual_out.shape == visual.shape
-        assert kg_out.shape == kg.shape
-        assert "visual_link_density" in module.last_stats
-        assert module.last_stats["visual_residual_scale"] == pytest.approx(0.0)
+        assert link_repr.shape == (2, 8)
+        assert "visual_link_density" in stats
+        assert "link_alpha" not in stats
 
     def test_masked_topk_prefers_high_scores(self):
         from src.model.graph_link import SparseGraphLinkModule
 
-        module = SparseGraphLinkModule(d_hidden=4, top_k=2, dropout=0.0)
+        module = SparseGraphLinkModule(d_hidden=4, top_k=2, num_heads=2, dropout=0.0)
         scores = torch.tensor(
             [[[1.0, 3.0, 2.0, -5.0], [0.1, 0.2, 0.9, 0.8]]],
             dtype=torch.float32,
@@ -51,18 +50,17 @@ class TestSparseGraphLinkModule:
         _, indices = module._masked_topk(scores, target_mask=target_mask, k=2)
         assert indices.tolist() == [[[1, 2], [2, 1]]]
 
-    def test_identity_at_initialization(self):
+    def test_sparse_links_can_zero_out_low_relevance_pairs(self):
         from src.model.graph_link import SparseGraphLinkModule
 
-        module = SparseGraphLinkModule(d_hidden=8, top_k=2, dropout=0.0)
-        module.eval()
-        visual = torch.randn(2, 4, 8)
-        kg = torch.randn(2, 3, 8)
-        question = torch.randn(2, 8)
-
-        visual_out, kg_out = module(visual, kg, question)
-        assert torch.allclose(visual_out, visual, atol=1e-6)
-        assert torch.allclose(kg_out, kg, atol=1e-6)
+        module = SparseGraphLinkModule(d_hidden=8, top_k=2, num_heads=2, dropout=0.0)
+        scores = torch.tensor([[[0.9, 0.2, -0.9], [0.8, -0.7, -0.8]]], dtype=torch.float32)
+        visual_mask = torch.tensor([[1, 1]], dtype=torch.bool)
+        kg_mask = torch.tensor([[1, 1, 1]], dtype=torch.bool)
+        cross_weights, stats = module._build_cross_weights(scores, visual_mask=visual_mask, kg_mask=kg_mask)
+        assert cross_weights.shape == (1, 2, 3)
+        assert (cross_weights >= 0).all()
+        assert "visual_high_frac" in stats
 
 
 class TestGQAGraphLinkIntegration:
@@ -81,6 +79,7 @@ class TestGQAGraphLinkIntegration:
                 text_encoder_name="stub",
                 enable_graph_link_module=enable_graph_link,
                 graph_link_top_k=2,
+                graph_link_num_heads=4,
             )
         model.eval()
         return model

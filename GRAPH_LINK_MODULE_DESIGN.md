@@ -28,12 +28,17 @@
 2. sparse top-k selection межграфовых связей;
 3. dynamic relevance filtering по схеме, вдохновлённой MAGIC-VQA:
    `mean ± std * scale`;
-4. lightweight 2-layer graph propagation on the induced heterogeneous graph;
-5. conservative residual fusion назад в baseline node states.
+4. bidirectional sparse multi-head cross-attention:
+   - scene attends to kg
+   - kg attends to scene
+5. pooled `link_repr`
+6. late fusion with the baseline representation:
+   `concat([baseline_repr, alpha * link_repr]) -> MLP`
 
 Модуль не переписывает baseline adjacency matrix и не меняет dataset contract.
-Residual scale инициализируется в `0`, поэтому модуль стартует как
-identity-map и не должен ломать baseline в нулевой итерации.
+Интеграция теперь поздняя и более безопасная: baseline graph path строит
+`baseline_repr` как раньше, а graph-link branch добавляет отдельный
+auxiliary representation только на этапе финального fusion.
 
 ## 3. Where It Is Inserted
 
@@ -42,11 +47,14 @@ identity-map и не должен ломать baseline в нулевой ите
 1. visual features проецируются в hidden space;
 2. question кодируется в hidden space;
 3. textual/kg node features проецируются в hidden space;
-4. **graph-link module** связывает visual и kg node states;
-5. затем baseline собирает `visual | question | kg` и запускает обычный
-   relation-aware `DenseGATLayer` stack.
+4. baseline собирает `visual | question | kg` и запускает обычный
+   relation-aware `DenseGATLayer` stack;
+5. отдельно graph-link branch строит sparse cross-graph attention и
+   производит `link_repr`;
+6. `baseline_repr` и `link_repr` сливаются на финальном readout stage.
 
-То есть модуль стоит **до baseline GNN stack** как additive pre-GNN linker.
+То есть модуль больше не стоит как pre-GNN overwrite. Это теперь
+**late-fusion auxiliary branch**.
 
 ## 4. Supported Modes
 

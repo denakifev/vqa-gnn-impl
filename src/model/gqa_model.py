@@ -110,7 +110,9 @@ class GQAVQAGNNModel(nn.Module):
         freeze_text_encoder: bool = False,
         enable_graph_link_module: bool = False,
         graph_link_top_k: int = 4,
+        graph_link_num_heads: int = 8,
         graph_link_dropout: float | None = None,
+        graph_link_threshold_std_scale: float = 0.5,
     ):
         """
         Args:
@@ -137,8 +139,12 @@ class GQAVQAGNNModel(nn.Module):
                         nodes before the baseline GNN stack.
             graph_link_top_k (int): number of sparse cross-graph links kept per
                         node direction when the graph-link module is enabled.
+            graph_link_num_heads (int): number of heads in the sparse
+                        cross-attention branch.
             graph_link_dropout (float | None): dropout inside the graph-link
                         module. Defaults to `dropout`.
+            graph_link_threshold_std_scale (float): relevance-threshold width
+                        used by the sparse graph-link branch.
         """
         super().__init__()
 
@@ -175,7 +181,16 @@ class GQAVQAGNNModel(nn.Module):
             self.graph_link_module = SparseGraphLinkModule(
                 d_hidden=d_hidden,
                 top_k=graph_link_top_k,
+                num_heads=graph_link_num_heads,
                 dropout=dropout if graph_link_dropout is None else graph_link_dropout,
+                threshold_std_scale=graph_link_threshold_std_scale,
+            )
+            self.graph_link_alpha = nn.Parameter(torch.tensor(0.0))
+            self.graph_link_fusion = nn.Sequential(
+                nn.Linear(d_hidden * 2, d_hidden),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(d_hidden, d_hidden),
             )
         else:
             self.graph_link_module = None
@@ -268,10 +283,12 @@ class GQAVQAGNNModel(nn.Module):
         # 3. Project scene-graph node features → [B, N_kg, d_hidden]
         kg_emb = self.kg_node_proj(graph_node_features)
 
+        graph_link_stats = None
+        graph_link_repr = None
         if self.graph_link_module is not None:
             visual_mask = visual_features.abs().sum(dim=-1) > 0
             kg_mask = graph_node_features.abs().sum(dim=-1) > 0
-            vis_emb, kg_emb = self.graph_link_module(
+            graph_link_repr, graph_link_stats = self.graph_link_module(
                 visual_nodes=vis_emb,
                 kg_nodes=kg_emb,
                 question_node=q_emb.squeeze(1),
@@ -296,11 +313,19 @@ class GQAVQAGNNModel(nn.Module):
         attn_weights = F.softmax(attn_scores, dim=-1).unsqueeze(-1)
         graph_repr = (x * attn_weights).sum(dim=1)
 
+        if graph_link_repr is not None:
+            link_scale = torch.tanh(self.graph_link_alpha)
+            fused_repr = torch.cat([graph_repr, link_scale * graph_link_repr], dim=-1)
+            graph_repr = self.graph_link_fusion(fused_repr)
+
         # 8. Classify over answer vocabulary → [B, num_answers]
         logits = self.classifier(self.dropout(graph_repr))
         outputs = {"logits": logits}
-        if self.graph_link_module is not None:
-            outputs["graph_link_stats"] = self.graph_link_module.last_stats
+        if graph_link_stats is not None:
+            outputs["graph_link_stats"] = {
+                **graph_link_stats,
+                "link_alpha": float(torch.tanh(self.graph_link_alpha).detach().cpu().item()),
+            }
         return outputs
 
     def __str__(self) -> str:

@@ -60,7 +60,9 @@ freeze_text_encoder: True
 # between visual scene nodes and textual/kg nodes before the baseline GNN.
 enable_graph_link_module: False
 graph_link_top_k: 4
+graph_link_num_heads: 8
 graph_link_dropout: 0.1
+graph_link_threshold_std_scale: 0.5
 
 # Relation awareness:
 # GQAVQAGNNModel consumes `graph_edge_types` through every dense GAT

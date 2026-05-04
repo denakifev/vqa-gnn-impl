@@ -45,4 +45,6 @@ freeze_text_encoder: True
 # baseline VQA-2 GNN stack.
 enable_graph_link_module: False
 graph_link_top_k: 4
+graph_link_num_heads: 8
 graph_link_dropout: 0.1
+graph_link_threshold_std_scale: 0.5
