@@ -27,6 +27,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.model.graph_link import SparseGraphLinkModule
 # Re-export shared primitives so existing imports like
 #   from src.model.vqa_gnn import DenseGATLayer
 # continue to work.
@@ -84,6 +85,9 @@ class VQAGNNModel(nn.Module):
         freeze_text_encoder: bool = False,
         bert_model_name: Optional[str] = None,
         freeze_bert: Optional[bool] = None,
+        enable_graph_link_module: bool = False,
+        graph_link_top_k: int = 4,
+        graph_link_dropout: Optional[float] = None,
     ):
         """
         Args:
@@ -100,6 +104,11 @@ class VQAGNNModel(nn.Module):
                 `text_encoder_name`, kept for backward compatibility.
             freeze_bert (bool | None): deprecated alias for
                 `freeze_text_encoder`, kept for backward compatibility.
+            enable_graph_link_module (bool): enable additive sparse
+                visual<->kg linking before the baseline GNN stack.
+            graph_link_top_k (int): sparse top-k links per node direction.
+            graph_link_dropout (float | None): dropout inside the graph-link
+                module; defaults to `dropout`.
 
         Deviations from paper:
             - Paper uses pretrained RoBERTa for QA-context encoding. This repo
@@ -115,6 +124,8 @@ class VQAGNNModel(nn.Module):
             text_encoder_name = bert_model_name
         if freeze_bert is not None:
             freeze_text_encoder = freeze_bert
+
+        self.enable_graph_link_module = bool(enable_graph_link_module)
 
         # Visual projection
         self.visual_proj = nn.Sequential(
@@ -140,6 +151,15 @@ class VQAGNNModel(nn.Module):
 
         # Node type bias embeddings (learned, added to node features)
         self.node_type_emb = nn.Embedding(self.NUM_NODE_TYPES, d_hidden)
+
+        if self.enable_graph_link_module:
+            self.graph_link_module = SparseGraphLinkModule(
+                d_hidden=d_hidden,
+                top_k=graph_link_top_k,
+                dropout=dropout if graph_link_dropout is None else graph_link_dropout,
+            )
+        else:
+            self.graph_link_module = None
 
         # Graph attention layers — DenseGATLayer from gnn_core
         self.gnn_layers = nn.ModuleList(
@@ -205,6 +225,17 @@ class VQAGNNModel(nn.Module):
         # 3. Project KG node features → [B, N_kg, d_hidden]
         kg_emb = self.kg_node_proj(graph_node_features)
 
+        if self.graph_link_module is not None:
+            visual_mask = visual_features.abs().sum(dim=-1) > 0
+            kg_mask = graph_node_features.abs().sum(dim=-1) > 0
+            vis_emb, kg_emb = self.graph_link_module(
+                visual_nodes=vis_emb,
+                kg_nodes=kg_emb,
+                question_node=q_emb.squeeze(1),
+                visual_mask=visual_mask,
+                kg_mask=kg_mask,
+            )
+
         # 4. Build full node feature matrix [B, N_total, d_hidden]
         #    Order: visual | question | kg (must match graph_node_types)
         x = torch.cat([vis_emb, q_emb, kg_emb], dim=1)
@@ -225,7 +256,10 @@ class VQAGNNModel(nn.Module):
         # 8. Classify
         logits = self.classifier(self.dropout(graph_repr))  # [B, num_answers]
 
-        return {"logits": logits}
+        outputs = {"logits": logits}
+        if self.graph_link_module is not None:
+            outputs["graph_link_stats"] = self.graph_link_module.last_stats
+        return outputs
 
     def __str__(self) -> str:
         """Print model with parameter counts."""

@@ -88,3 +88,14 @@ trainer:
   seed: 42
   skip_oom: True
   max_grad_norm: 1.0
+
+freeze_policy:
+  freeze_all_baseline: False
+  freeze_visual_proj: False
+  freeze_question_encoder: False
+  freeze_kg_node_proj: False
+  freeze_node_type_emb: False
+  freeze_gnn_layers: False
+  freeze_readout: False
+  freeze_classifier: False
+  freeze_graph_link_module: False

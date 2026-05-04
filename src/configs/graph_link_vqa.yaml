@@ -1,0 +1,24 @@
+# VQA-2 coursework baseline + additive sparse graph-link module.
+
+defaults:
+  - baseline_vqa
+  - _self_
+
+writer:
+  run_name: "vqa2_graph_link_kaggle"
+
+model:
+  enable_graph_link_module: True
+  graph_link_top_k: 4
+  graph_link_dropout: 0.1
+
+freeze_policy:
+  freeze_all_baseline: False
+  freeze_visual_proj: False
+  freeze_question_encoder: False
+  freeze_kg_node_proj: False
+  freeze_node_type_emb: False
+  freeze_gnn_layers: False
+  freeze_readout: False
+  freeze_classifier: False
+  freeze_graph_link_module: False

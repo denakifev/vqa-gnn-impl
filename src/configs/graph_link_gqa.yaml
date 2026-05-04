@@ -1,0 +1,27 @@
+# GQA baseline + additive sparse graph-link module.
+#
+# This keeps the baseline training path intact while enabling the
+# question-conditioned visual<->kg linker for controlled comparisons.
+
+defaults:
+  - baseline_gqa
+  - _self_
+
+writer:
+  run_name: "gqa_graph_link_kaggle"
+
+model:
+  enable_graph_link_module: True
+  graph_link_top_k: 4
+  graph_link_dropout: 0.1
+
+freeze_policy:
+  freeze_all_baseline: False
+  freeze_visual_proj: False
+  freeze_question_encoder: False
+  freeze_kg_node_proj: False
+  freeze_node_type_emb: False
+  freeze_gnn_layers: False
+  freeze_readout: False
+  freeze_classifier: False
+  freeze_graph_link_module: False

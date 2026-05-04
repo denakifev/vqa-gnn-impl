@@ -8,7 +8,8 @@ GQA/VQA-2-focused VQA-GNN в этом репозитории.
 Актуальный статус проекта: `partially validated baseline`.
 
 Текущая стратегия: практичные GQA и VQA-2 train paths, которые можно запускать
-в Kaggle лимитах, затем сравнивать с архитектурными изменениями. GQA цель —
+в Kaggle лимитах, затем сравнивать с архитектурными изменениями. Текущий
+research branch: additive graph-link module поверх GQA baseline. GQA цель —
 `paper-aligned approximation`; VQA-2 — coursework extension, не результат
 статьи.
 
@@ -36,6 +37,8 @@ GQA/VQA-2-focused VQA-GNN в этом репозитории.
 - [GAP_ANALYSIS.md](GAP_ANALYSIS.md) — limitations, deviations, Kaggle risks.
 - [DATA_CONTRACTS.md](DATA_CONTRACTS.md) — GQA and VQA-2 data contracts.
 - [GQA_CLOSURE_REPORT.md](GQA_CLOSURE_REPORT.md) — итог GQA engineering-фазы.
+- [GRAPH_LINK_MODULE_DESIGN.md](GRAPH_LINK_MODULE_DESIGN.md) — active
+  research-module design and experiment modes.
 
 Repository mode must stay explicit:
 
@@ -102,6 +105,8 @@ batch contract описаны в `DATA_CONTRACTS.md`. Перед real train за
 - Output contract: `[B, 1842]`.
 - `graph_edge_types` находится в batch contract и consumed by
   relation-aware GQA message passing.
+- Optional research extension: `SparseGraphLinkModule`, включаемый только
+  конфигом и не меняющий dataset contract.
 
 ### VQA-2 Runtime Path
 
@@ -139,6 +144,12 @@ validation scripts и batch keys.
 
 Отвечает за model forward contracts, GNN/text/fusion modules, model configs и
 architectural deviations.
+
+При graph-link изменениях агент должен:
+
+- сохранять baseline path доступным;
+- не вносить скрытые изменения в baseline режим;
+- держать on/off control и freeze policy явными в config.
 
 ### Агент Обучения И Проверки
 

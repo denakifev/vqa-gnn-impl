@@ -4,8 +4,10 @@
 
 Текущая цель: практичные GQA и VQA-2 training paths, которые можно запускать
 в Kaggle-лимитах и использовать как baselines перед архитектурными
-изменениями. GQA остаётся `paper-aligned approximation`; VQA-2 — coursework
-extension и `not validated yet` относительно реальных training numbers.
+изменениями. Следующий активный research step — additive graph-link module
+поверх GQA baseline. GQA остаётся `paper-aligned approximation`; VQA-2 —
+coursework extension и `not validated yet` относительно реальных training
+numbers.
 
 Проект не является `paper reproduced` и не является `fully paper-faithful`.
 Реальные training/eval paper numbers отсутствуют.
@@ -26,6 +28,9 @@ GQA, основной paper-aligned path:
 - Loss: `src/loss/gqa_loss.py::GQALoss`
 - Metric: `src/metrics/gqa_metric.py::GQAAccuracy`
 - Train config: `src/configs/baseline_gqa.yaml`
+- Research configs:
+  - `src/configs/graph_link_gqa.yaml`
+  - `src/configs/graph_link_gqa_frozen.yaml`
 - Inference config: `src/configs/inference_gqa.yaml`
 
 VQA-2, coursework extension:
@@ -36,6 +41,9 @@ VQA-2, coursework extension:
 - Loss: `src/loss/vqa_loss.py::VQALoss`
 - Metric: `src/metrics/vqa_metric.py::VQAAccuracy`
 - Train config: `src/configs/baseline_vqa.yaml`
+- Research configs:
+  - `src/configs/graph_link_vqa.yaml`
+  - `src/configs/graph_link_vqa_frozen.yaml`
 - Inference config: `src/configs/inference_vqa.yaml`
 
 Удалён отдельный strict paper-equation / two-subgraph контур. Оставшийся путь
@@ -66,6 +74,33 @@ Visual Genome/GQA features, textual scene-graph nodes, typed relation ids
 Это всё ещё engineering approximation под Kaggle, а не полная paper
 reproduction. Но активный GQA baseline теперь ближе к статье по optimizer /
 scheduler / depth / text finetuning, сохраняя при этом практичный runtime.
+
+## Graph-Link Research Module
+
+На GQA path теперь добавлен отдельный additive research module:
+
+- Module: `src/model/graph_link.py::SparseGraphLinkModule`
+- Integration point: `src/model/gqa_model.py::GQAVQAGNNModel`
+- Design note: [GRAPH_LINK_MODULE_DESIGN.md](GRAPH_LINK_MODULE_DESIGN.md)
+
+Он делает question-conditioned sparse top-k linking между:
+
+- visual scene nodes
+- textual/kg nodes
+
+перед baseline GNN stack.
+
+Режимы:
+
+- `baseline_gqa` — baseline control
+- `graph_link_gqa` — baseline + graph-link module
+- `graph_link_gqa_frozen` — frozen baseline + trainable graph-link module
+- `baseline_vqa` — VQA-2 coursework baseline control
+- `graph_link_vqa` — VQA-2 baseline + graph-link module
+- `graph_link_vqa_frozen` — frozen VQA-2 baseline + trainable graph-link module
+
+Freeze policy применяется через `freeze_policy` block в train config и
+обрабатывается в `src/utils/model_freeze.py`.
 
 ## Recorded Metrics
 

@@ -12,6 +12,7 @@ from src.utils.init_utils import (
     set_random_seed,
     setup_saving_and_logging,
 )
+from src.utils.model_freeze import apply_freeze_policy, count_parameters
 from src.utils.optim import (
     normalize_optimizer_param_groups,
     resolve_effective_epoch_len,
@@ -49,7 +50,15 @@ def main(config):
 
     # build model architecture, then print to console
     model = instantiate(config.model).to(device)
+    apply_freeze_policy(model, config.get("freeze_policy"))
     logger.info(model)
+    param_stats = count_parameters(model)
+    logger.info(
+        "Parameter accounting after freeze policy: "
+        f"total={param_stats['total']:,}, "
+        f"trainable={param_stats['trainable']:,}, "
+        f"frozen={param_stats['frozen']:,}"
+    )
 
     # get function handles of loss and metrics
     loss_function = instantiate(config.loss_function).to(device)

@@ -44,6 +44,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.model.graph_link import SparseGraphLinkModule
 from src.model.gnn_core import DenseGATLayer, HFQuestionEncoder
 
 logger = logging.getLogger(__name__)
@@ -57,11 +58,12 @@ class GQAVQAGNNModel(nn.Module):
       1. Project visual region features to d_hidden.
       2. Encode question via HFQuestionEncoder → d_hidden.
       3. Project scene-graph node features to d_hidden.
-      4. Add node-type embeddings (visual / question / scene-graph).
-      5. Concatenate all nodes into a single graph node matrix.
-      6. Run L layers of DenseGATLayer on the full graph.
-      7. Attention-pool the graph nodes → graph representation.
-      8. Classify over the answer vocabulary.
+      4. Optional sparse graph-link exchange between visual and kg nodes.
+      5. Add node-type embeddings (visual / question / scene-graph).
+      6. Concatenate all nodes into a single graph node matrix.
+      7. Run L layers of DenseGATLayer on the full graph.
+      8. Attention-pool the graph nodes → graph representation.
+      9. Classify over the answer vocabulary.
 
     GQA task contract:
       - Input batch: standard (B items, no candidate expansion).
@@ -106,6 +108,9 @@ class GQAVQAGNNModel(nn.Module):
         dropout: float = 0.1,
         text_encoder_name: str = "roberta-large",
         freeze_text_encoder: bool = False,
+        enable_graph_link_module: bool = False,
+        graph_link_top_k: int = 4,
+        graph_link_dropout: float | None = None,
     ):
         """
         Args:
@@ -127,11 +132,19 @@ class GQAVQAGNNModel(nn.Module):
             dropout (float): dropout probability.
             text_encoder_name (str): HF identifier for text encoder.
             freeze_text_encoder (bool): if True, freeze text encoder weights.
+            enable_graph_link_module (bool): enable the additive sparse
+                        cross-graph linker between visual nodes and textual/kg
+                        nodes before the baseline GNN stack.
+            graph_link_top_k (int): number of sparse cross-graph links kept per
+                        node direction when the graph-link module is enabled.
+            graph_link_dropout (float | None): dropout inside the graph-link
+                        module. Defaults to `dropout`.
         """
         super().__init__()
 
         self.num_answers = num_answers
         self.num_relations = int(num_relations)
+        self.enable_graph_link_module = bool(enable_graph_link_module)
 
         # Visual projection
         self.visual_proj = nn.Sequential(
@@ -157,6 +170,15 @@ class GQAVQAGNNModel(nn.Module):
 
         # Node type bias embeddings
         self.node_type_emb = nn.Embedding(self.NUM_NODE_TYPES, d_hidden)
+
+        if self.enable_graph_link_module:
+            self.graph_link_module = SparseGraphLinkModule(
+                d_hidden=d_hidden,
+                top_k=graph_link_top_k,
+                dropout=dropout if graph_link_dropout is None else graph_link_dropout,
+            )
+        else:
+            self.graph_link_module = None
 
         # Graph attention layers (relation-aware when num_relations > 0)
         self.gnn_layers = nn.ModuleList(
@@ -246,6 +268,17 @@ class GQAVQAGNNModel(nn.Module):
         # 3. Project scene-graph node features → [B, N_kg, d_hidden]
         kg_emb = self.kg_node_proj(graph_node_features)
 
+        if self.graph_link_module is not None:
+            visual_mask = visual_features.abs().sum(dim=-1) > 0
+            kg_mask = graph_node_features.abs().sum(dim=-1) > 0
+            vis_emb, kg_emb = self.graph_link_module(
+                visual_nodes=vis_emb,
+                kg_nodes=kg_emb,
+                question_node=q_emb.squeeze(1),
+                visual_mask=visual_mask,
+                kg_mask=kg_mask,
+            )
+
         # 4. Build full node feature matrix [B, N_total, d_hidden]
         #    Order: visual | question | scene-graph  (matches graph_node_types)
         x = torch.cat([vis_emb, q_emb, kg_emb], dim=1)
@@ -265,8 +298,10 @@ class GQAVQAGNNModel(nn.Module):
 
         # 8. Classify over answer vocabulary → [B, num_answers]
         logits = self.classifier(self.dropout(graph_repr))
-
-        return {"logits": logits}
+        outputs = {"logits": logits}
+        if self.graph_link_module is not None:
+            outputs["graph_link_stats"] = self.graph_link_module.last_stats
+        return outputs
 
     def __str__(self) -> str:
         all_params = sum(p.numel() for p in self.parameters())

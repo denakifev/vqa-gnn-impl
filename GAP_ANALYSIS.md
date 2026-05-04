@@ -19,12 +19,16 @@ Active repository mode:
 - GQA 1842-way classification: `implemented`, `validated`.
 - GQA relation-aware message passing via `graph_edge_types`: `implemented`,
   `validated`, `paper-aligned approximation`.
+- GQA additive sparse graph-link module for visual<->textual/kg exchange:
+  `implemented`, `runtime-valid`.
 - Strict GQA preprocessing package: `validated`, uploaded to Kaggle, then
   validated end-to-end against restored real Kaggle data.
 - Single Kaggle-practical GQA training config: `implemented`,
   `not validated yet` on a full real train run.
 - VQA-2 coursework path (`VQADataset`, `VQAGNNModel`, `VQALoss`,
   `VQAAccuracy`, `baseline_vqa`): `implemented`, `not validated yet`.
+- VQA-2 additive sparse graph-link module path: `implemented`,
+  `runtime-valid`.
 - Demo and engineering tests: `runtime-valid`.
 - Recorded practical baseline observations:
   GQA controlled subset `val_GQA_Accuracy = 0.20`,
@@ -41,6 +45,8 @@ Active repository mode:
 | Visual vs textual scene-graph relation vocab split | `paper-aligned approximation` | Shared 624 relation vocab |
 | Entity linking via tokenization | `paper-aligned approximation` | Practical preprocessing choice |
 | Exact RoBERTa-large checkpoint provenance | `paper-aligned approximation` | Public checkpoint default |
+| Graph-link quality gain over baseline | `not validated yet` | Module implemented for controlled experiments; no real metric claim yet |
+| Separate external concept graph in active GQA path | `not paper-faithful yet` | Current graph-link module operates on visual nodes + existing textual/kg nodes, not a restored ConceptNet branch |
 
 ## Remaining VQA-2 Gaps
 
@@ -63,6 +69,8 @@ Active repository mode:
 - Validation metrics are approximate when `datasets.val.limit=10000`.
 - Unfreezing RoBERTa-large or raising `d_hidden` may exceed the available
   notebook GPU budget.
+- `graph_link_gqa_frozen` is the recommended first controlled research mode if
+  the goal is to isolate the contribution of the new module.
 
 ## Recommended First Run
 

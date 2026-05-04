@@ -1,0 +1,22 @@
+# GQA graph-link experiment with the baseline backbone frozen.
+#
+# Intended for controlled studies where the new sparse graph-link module is
+# the main trainable intervention on top of the established baseline path.
+
+defaults:
+  - graph_link_gqa
+  - _self_
+
+writer:
+  run_name: "gqa_graph_link_frozen_kaggle"
+
+freeze_policy:
+  freeze_all_baseline: True
+  freeze_visual_proj: False
+  freeze_question_encoder: False
+  freeze_kg_node_proj: False
+  freeze_node_type_emb: False
+  freeze_gnn_layers: False
+  freeze_readout: False
+  freeze_classifier: False
+  freeze_graph_link_module: False

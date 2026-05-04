@@ -97,6 +97,48 @@ class TestVQAModel:
         }
         assert model(**batch)["logits"].shape == (B, 13)
 
+    def test_graph_link_mode_runs_and_emits_stats(self):
+        from src.model.vqa_gnn import VQAGNNModel
+
+        class _StubHF(torch.nn.Module):
+            def __init__(self, hidden: int):
+                super().__init__()
+                self.config = MagicMock(hidden_size=hidden)
+                self.embed = torch.nn.Embedding(128, hidden)
+
+            def forward(self, input_ids, attention_mask):
+                del attention_mask
+                return MagicMock(last_hidden_state=self.embed(input_ids))
+
+        with patch("transformers.AutoModel.from_pretrained", return_value=_StubHF(32)):
+            model = VQAGNNModel(
+                d_visual=8,
+                d_kg=5,
+                d_hidden=32,
+                num_gnn_layers=2,
+                num_heads=4,
+                num_answers=13,
+                text_encoder_name="stub",
+                freeze_text_encoder=True,
+                enable_graph_link_module=True,
+                graph_link_top_k=2,
+            )
+
+        B, Nv, Nkg = 2, 4, 3
+        n_total = Nv + 1 + Nkg
+        node_types = torch.tensor([[0] * Nv + [1] + [2] * Nkg] * B)
+        batch = {
+            "visual_features": torch.randn(B, Nv, 8),
+            "question_input_ids": torch.randint(0, 100, (B, 6)),
+            "question_attention_mask": torch.ones(B, 6, dtype=torch.long),
+            "graph_node_features": torch.randn(B, Nkg, 5),
+            "graph_adj": torch.ones(B, n_total, n_total),
+            "graph_node_types": node_types,
+        }
+        out = model(**batch)
+        assert out["logits"].shape == (B, 13)
+        assert "graph_link_stats" in out
+
 
 class TestVQAHydraConfigs:
     def _compose(self, config_name: str, overrides: list[str]):
@@ -121,6 +163,16 @@ class TestVQAHydraConfigs:
         assert cfg.datasets.train.d_kg == cfg.model.d_kg
         assert cfg.datasets.val.d_kg == cfg.model.d_kg
         assert cfg.datasets.val.limit == 10000
+
+    def test_graph_link_vqa_config_enables_module(self):
+        cfg = self._compose("graph_link_vqa", [])
+        assert cfg.model.enable_graph_link_module is True
+        assert cfg.freeze_policy.freeze_all_baseline is False
+
+    def test_graph_link_vqa_frozen_config_freezes_backbone(self):
+        cfg = self._compose("graph_link_vqa_frozen", [])
+        assert cfg.model.enable_graph_link_module is True
+        assert cfg.freeze_policy.freeze_all_baseline is True
 
     def test_inference_vqa_skip_model_load_bare_override(self):
         cfg = self._compose("inference_vqa", ["inferencer.skip_model_load=True"])

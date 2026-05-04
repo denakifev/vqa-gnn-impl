@@ -39,3 +39,10 @@ text_encoder_name: "roberta-large"
 # Whether to freeze text encoder weights during training.
 # Frozen by default for Kaggle practicality.
 freeze_text_encoder: True
+
+# Additive sparse graph-link module.
+# Optional research extension for controlled visual<->kg exchange before the
+# baseline VQA-2 GNN stack.
+enable_graph_link_module: False
+graph_link_top_k: 4
+graph_link_dropout: 0.1
