@@ -47,6 +47,7 @@ Active repository mode:
 | Exact RoBERTa-large checkpoint provenance | `paper-aligned approximation` | Public checkpoint default |
 | Graph-link quality gain over baseline | `not validated yet` | Module implemented for controlled experiments; no real metric claim yet |
 | Separate external concept graph in active GQA path | `not paper-faithful yet` | Current graph-link module operates on visual nodes + existing textual/kg nodes, not a restored ConceptNet branch |
+| First graph-link formulation on VQA-2 | `not validated yet` | Early runs regressed against the recorded baseline; module was later rewritten into a more conservative MAGIC-inspired variant |
 
 ## Remaining VQA-2 Gaps
 
@@ -71,6 +72,9 @@ Active repository mode:
   notebook GPU budget.
 - `graph_link_gqa_frozen` is the recommended first controlled research mode if
   the goal is to isolate the contribution of the new module.
+- For graph-link experiments, frozen runs are only meaningful when initialized
+  from a trained baseline checkpoint; frozen-from-scratch runs can collapse and
+  should be treated as setup failures, not architecture conclusions.
 
 ## Recommended First Run
 

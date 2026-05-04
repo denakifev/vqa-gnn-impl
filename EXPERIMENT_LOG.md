@@ -64,3 +64,57 @@ Notes:
 - this metric is recorded as an observed practical baseline number;
 - exact subset/full-val scope should be kept aligned with the run logs when
   comparing later experiments.
+
+## Graph-Link Negative Results And Rewrite Notes
+
+### VQA-2 — First Graph-Link Variant Regressed
+
+Observed status:
+
+- path family: `graph_link_vqa.yaml`, `graph_link_vqa_frozen.yaml`
+- comparison reference: `baseline_vqa.yaml`
+- matched practical baseline on VQA-2 remained stronger:
+  observed `val_VQA_Accuracy = 0.54`
+- early graph-link runs underperformed this baseline and, in one frozen-from-
+  scratch setup, produced near-zero train accuracy
+
+What was learned:
+
+- the first graph-link implementation was too aggressive as a pre-GNN
+  intervention;
+- it directly modified visual and kg node states before the baseline GNN stack,
+  which made it easy to disturb a working baseline path;
+- frozen runs launched from random initialization were methodologically weak,
+  because a tiny trainable graph-link block was being optimized on top of an
+  otherwise frozen random baseline;
+- full graph-link runs showed that the module was learnable, but the resulting
+  extra capacity did not translate into better validation performance.
+
+Most likely causes recorded for future reporting:
+
+1. The first graph-link variant started as a non-identity perturbation and
+   could harm baseline node geometry from the first steps.
+2. Cross-graph interaction happened too early and too strongly, before the
+   existing backbone had a chance to stabilize around it.
+3. The first design used top-k learned links without enough filtering or
+   relevance calibration, so noisy cross-graph edges could survive.
+4. The frozen graph-link experiment is only meaningful when initialized from a
+   trained baseline checkpoint; frozen-from-scratch results should not be used
+   as evidence against the hypothesis.
+
+Follow-up action taken in the repo:
+
+- `src/model/graph_link.py` was rewritten into a more conservative,
+  MAGIC-inspired implicit augmentation block:
+  - cosine-based scoring;
+  - top-k filtering;
+  - dynamic relevance thresholds;
+  - lightweight 2-layer graph propagation;
+  - residual scales initialized at zero, so the module starts as an identity
+    map.
+
+Interpretation discipline:
+
+- these failed runs should be treated as valid negative experimental evidence
+  about the *first* graph-link formulation, not as a final verdict on the
+  broader hypothesis about controlled inter-graph integration.

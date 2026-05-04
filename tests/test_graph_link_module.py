@@ -36,7 +36,8 @@ class TestSparseGraphLinkModule:
 
         assert visual_out.shape == visual.shape
         assert kg_out.shape == kg.shape
-        assert module.last_stats["visual_link_density"] == pytest.approx(2 / 3)
+        assert "visual_link_density" in module.last_stats
+        assert module.last_stats["visual_residual_scale"] == pytest.approx(0.0)
 
     def test_masked_topk_prefers_high_scores(self):
         from src.model.graph_link import SparseGraphLinkModule
@@ -49,6 +50,19 @@ class TestSparseGraphLinkModule:
         target_mask = torch.tensor([[1, 1, 1, 0]], dtype=torch.bool)
         _, indices = module._masked_topk(scores, target_mask=target_mask, k=2)
         assert indices.tolist() == [[[1, 2], [2, 1]]]
+
+    def test_identity_at_initialization(self):
+        from src.model.graph_link import SparseGraphLinkModule
+
+        module = SparseGraphLinkModule(d_hidden=8, top_k=2, dropout=0.0)
+        module.eval()
+        visual = torch.randn(2, 4, 8)
+        kg = torch.randn(2, 3, 8)
+        question = torch.randn(2, 8)
+
+        visual_out, kg_out = module(visual, kg, question)
+        assert torch.allclose(visual_out, visual, atol=1e-6)
+        assert torch.allclose(kg_out, kg, atol=1e-6)
 
 
 class TestGQAGraphLinkIntegration:

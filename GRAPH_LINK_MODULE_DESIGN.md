@@ -24,14 +24,16 @@
 
 Он выполняет:
 
-1. question-conditioned scoring между visual nodes и textual/kg nodes;
+1. question-conditioned cosine scoring между visual nodes и textual/kg nodes;
 2. sparse top-k selection межграфовых связей;
-3. weighted message aggregation:
-   - visual <- top-k kg
-   - kg <- top-k visual
-4. gated residual fusion назад в baseline node states.
+3. dynamic relevance filtering по схеме, вдохновлённой MAGIC-VQA:
+   `mean ± std * scale`;
+4. lightweight 2-layer graph propagation on the induced heterogeneous graph;
+5. conservative residual fusion назад в baseline node states.
 
 Модуль не переписывает baseline adjacency matrix и не меняет dataset contract.
+Residual scale инициализируется в `0`, поэтому модуль стартует как
+identity-map и не должен ломать baseline в нулевой итерации.
 
 ## 3. Where It Is Inserted
 
