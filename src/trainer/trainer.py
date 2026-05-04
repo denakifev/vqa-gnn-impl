@@ -1,5 +1,6 @@
 from src.metrics.tracker import MetricTracker
 from src.trainer.base_trainer import BaseTrainer
+import torch
 
 
 class Trainer(BaseTrainer):
@@ -71,9 +72,42 @@ class Trainer(BaseTrainer):
         # such as audio, text or images, for example
 
         # logging scheme might be different for different partitions
-        if mode == "train":  # the method is called only every self.log_step steps
-            # Log Stuff
-            pass
-        else:
-            # Log Stuff
-            pass
+        if self.writer is None:
+            return
+
+        if "graph_link_stats" in batch:
+            for stat_name, stat_value in batch["graph_link_stats"].items():
+                self.writer.add_scalar(f"graph_link/{stat_name}", float(stat_value))
+
+        baseline_logits = batch.get("baseline_logits")
+        if baseline_logits is not None:
+            baseline_logit_norm = torch.linalg.vector_norm(
+                baseline_logits.detach(), dim=-1
+            ).mean()
+            self.writer.add_scalar(
+                "graph_link/baseline_logit_norm", float(baseline_logit_norm.cpu().item())
+            )
+
+        graph_link_logits = batch.get("graph_link_logits")
+        if graph_link_logits is not None:
+            graph_link_logit_norm = torch.linalg.vector_norm(
+                graph_link_logits.detach(), dim=-1
+            ).mean()
+            self.writer.add_scalar(
+                "graph_link/logit_norm", float(graph_link_logit_norm.cpu().item())
+            )
+            self.writer.add_scalar(
+                "graph_link/logit_abs_mean",
+                float(graph_link_logits.detach().abs().mean().cpu().item()),
+            )
+
+            link_alpha = batch.get("graph_link_stats", {}).get("link_alpha")
+            if link_alpha is not None:
+                scaled_link_logit_norm = torch.linalg.vector_norm(
+                    (float(link_alpha) * graph_link_logits.detach()),
+                    dim=-1,
+                ).mean()
+                self.writer.add_scalar(
+                    "graph_link/scaled_logit_norm",
+                    float(scaled_link_logit_norm.cpu().item()),
+                )
