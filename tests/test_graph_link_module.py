@@ -107,8 +107,11 @@ class TestGQAGraphLinkIntegration:
         model = self._toy_model(enable_graph_link=True)
         out = model(**self._toy_batch())
         assert out["logits"].shape == (2, 5)
+        assert out["baseline_logits"].shape == (2, 5)
+        assert out["graph_link_logits"].shape == (2, 5)
         assert "graph_link_stats" in out
         assert "visual_link_density" in out["graph_link_stats"]
+        assert "link_alpha" in out["graph_link_stats"]
 
 
 class TestFreezePolicy:
@@ -142,6 +145,15 @@ class TestFreezePolicy:
         stats = count_parameters(model)
         assert stats["trainable"] > 0
         assert stats["trainable"] < stats["total"]
+
+    def test_freeze_graph_link_module_freezes_auxiliary_head_too(self):
+        model = self._toy_model()
+        apply_freeze_policy(model, {"freeze_graph_link_module": True})
+
+        assert model.graph_link_module is not None
+        assert not any(param.requires_grad for param in model.graph_link_module.parameters())
+        assert not any(param.requires_grad for param in model.graph_link_classifier.parameters())
+        assert model.graph_link_alpha.requires_grad is False
 
 
 class TestGraphLinkHydraConfigs:

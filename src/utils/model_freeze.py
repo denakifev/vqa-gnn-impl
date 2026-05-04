@@ -3,6 +3,11 @@ def set_requires_grad(module, requires_grad: bool):
         param.requires_grad = requires_grad
 
 
+def set_parameter_requires_grad(parameter, requires_grad: bool):
+    if parameter is not None:
+        parameter.requires_grad = requires_grad
+
+
 def count_parameters(model) -> dict[str, int]:
     total = sum(param.numel() for param in model.parameters())
     trainable = sum(param.numel() for param in model.parameters() if param.requires_grad)
@@ -53,3 +58,10 @@ def apply_freeze_policy(model, freeze_policy: dict | None):
             module = getattr(model, module_name)
             if module is not None:
                 set_requires_grad(module, False)
+
+    if policy.get("freeze_graph_link_module", False):
+        for module_name in ("graph_link_classifier",):
+            module = getattr(model, module_name, None)
+            if module is not None:
+                set_requires_grad(module, False)
+        set_parameter_requires_grad(getattr(model, "graph_link_alpha", None), False)

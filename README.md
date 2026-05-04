@@ -95,7 +95,9 @@ scheduler / depth / text finetuning, сохраняя при этом практ
 - sparse link construction
 - bidirectional cross-attention
 - pooled `link_repr`
-- `concat([baseline_repr, link_repr]) + MLP` на финальном fusion stage
+- отдельный graph-link answer head
+- финальное logit fusion:
+  `baseline_logits + alpha * graph_link_logits`
 
 Режимы:
 

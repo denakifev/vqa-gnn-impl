@@ -136,7 +136,7 @@ class GQAVQAGNNModel(nn.Module):
             freeze_text_encoder (bool): if True, freeze text encoder weights.
             enable_graph_link_module (bool): enable the additive sparse
                         cross-graph linker between visual nodes and textual/kg
-                        nodes before the baseline GNN stack.
+                        nodes as an auxiliary late-fusion branch.
             graph_link_top_k (int): number of sparse cross-graph links kept per
                         node direction when the graph-link module is enabled.
             graph_link_num_heads (int): number of heads in the sparse
@@ -186,11 +186,11 @@ class GQAVQAGNNModel(nn.Module):
                 threshold_std_scale=graph_link_threshold_std_scale,
             )
             self.graph_link_alpha = nn.Parameter(torch.tensor(0.0))
-            self.graph_link_fusion = nn.Sequential(
+            self.graph_link_classifier = nn.Sequential(
                 nn.Linear(d_hidden * 2, d_hidden),
                 nn.GELU(),
                 nn.Dropout(dropout),
-                nn.Linear(d_hidden, d_hidden),
+                nn.Linear(d_hidden, num_answers),
             )
         else:
             self.graph_link_module = None
@@ -313,19 +313,19 @@ class GQAVQAGNNModel(nn.Module):
         attn_weights = F.softmax(attn_scores, dim=-1).unsqueeze(-1)
         graph_repr = (x * attn_weights).sum(dim=1)
 
-        if graph_link_repr is not None:
-            link_scale = torch.tanh(self.graph_link_alpha)
-            fused_repr = torch.cat([graph_repr, link_scale * graph_link_repr], dim=-1)
-            graph_repr = self.graph_link_fusion(fused_repr)
-
         # 8. Classify over answer vocabulary → [B, num_answers]
-        logits = self.classifier(self.dropout(graph_repr))
-        outputs = {"logits": logits}
+        baseline_logits = self.classifier(self.dropout(graph_repr))
+        logits = baseline_logits
+        outputs = {"logits": logits, "baseline_logits": baseline_logits}
         if graph_link_stats is not None:
-            outputs["graph_link_stats"] = {
-                **graph_link_stats,
-                "link_alpha": float(torch.tanh(self.graph_link_alpha).detach().cpu().item()),
-            }
+            link_scale = torch.tanh(self.graph_link_alpha)
+            graph_link_logits = self.graph_link_classifier(
+                self.dropout(torch.cat([graph_repr, link_scale * graph_link_repr], dim=-1))
+            )
+            logits = baseline_logits + link_scale * graph_link_logits
+            outputs["logits"] = logits
+            outputs["graph_link_logits"] = graph_link_logits
+            outputs["graph_link_stats"] = {**graph_link_stats, "link_alpha": float(link_scale.detach().cpu().item())}
         return outputs
 
     def __str__(self) -> str:

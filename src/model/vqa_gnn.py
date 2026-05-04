@@ -107,7 +107,7 @@ class VQAGNNModel(nn.Module):
             freeze_bert (bool | None): deprecated alias for
                 `freeze_text_encoder`, kept for backward compatibility.
             enable_graph_link_module (bool): enable additive sparse
-                visual<->kg linking before the baseline GNN stack.
+                visual<->kg linking as an auxiliary late-fusion branch.
             graph_link_top_k (int): sparse top-k links per node direction.
             graph_link_num_heads (int): number of heads in the sparse
                 cross-attention branch.
@@ -167,11 +167,11 @@ class VQAGNNModel(nn.Module):
                 threshold_std_scale=graph_link_threshold_std_scale,
             )
             self.graph_link_alpha = nn.Parameter(torch.tensor(0.0))
-            self.graph_link_fusion = nn.Sequential(
+            self.graph_link_classifier = nn.Sequential(
                 nn.Linear(d_hidden * 2, d_hidden),
                 nn.GELU(),
                 nn.Dropout(dropout),
-                nn.Linear(d_hidden, d_hidden),
+                nn.Linear(d_hidden, num_answers),
             )
         else:
             self.graph_link_module = None
@@ -270,19 +270,21 @@ class VQAGNNModel(nn.Module):
         attn_weights = F.softmax(attn_scores, dim=-1).unsqueeze(-1)  # [B, N_total, 1]
         graph_repr = (x * attn_weights).sum(dim=1)  # [B, d_hidden]
 
-        if graph_link_repr is not None:
-            link_scale = torch.tanh(self.graph_link_alpha)
-            fused_repr = torch.cat([graph_repr, link_scale * graph_link_repr], dim=-1)
-            graph_repr = self.graph_link_fusion(fused_repr)
-
         # 8. Classify
-        logits = self.classifier(self.dropout(graph_repr))  # [B, num_answers]
-
-        outputs = {"logits": logits}
+        baseline_logits = self.classifier(self.dropout(graph_repr))  # [B, num_answers]
+        logits = baseline_logits
+        outputs = {"logits": logits, "baseline_logits": baseline_logits}
         if graph_link_stats is not None:
+            link_scale = torch.tanh(self.graph_link_alpha)
+            graph_link_logits = self.graph_link_classifier(
+                self.dropout(torch.cat([graph_repr, link_scale * graph_link_repr], dim=-1))
+            )
+            logits = baseline_logits + link_scale * graph_link_logits
+            outputs["logits"] = logits
+            outputs["graph_link_logits"] = graph_link_logits
             outputs["graph_link_stats"] = {
                 **graph_link_stats,
-                "link_alpha": float(torch.tanh(self.graph_link_alpha).detach().cpu().item()),
+                "link_alpha": float(link_scale.detach().cpu().item()),
             }
         return outputs
 

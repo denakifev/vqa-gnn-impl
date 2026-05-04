@@ -19,7 +19,8 @@ Active repository mode:
 - GQA 1842-way classification: `implemented`, `validated`.
 - GQA relation-aware message passing via `graph_edge_types`: `implemented`,
   `validated`, `paper-aligned approximation`.
-- GQA additive sparse graph-link module for visual<->textual/kg exchange:
+- GQA additive sparse graph-link module for visual<->textual/kg exchange with
+  separate auxiliary answer head and weighted logit fusion:
   `implemented`, `runtime-valid`.
 - Strict GQA preprocessing package: `validated`, uploaded to Kaggle, then
   validated end-to-end against restored real Kaggle data.
@@ -75,6 +76,9 @@ Active repository mode:
 - For graph-link experiments, frozen runs are only meaningful when initialized
   from a trained baseline checkpoint; frozen-from-scratch runs can collapse and
   should be treated as setup failures, not architecture conclusions.
+- Comparing graph-link variants to baseline requires fully matched protocol:
+  subset sizes, shuffle regime, batch size, clipping, and epoch definition all
+  materially affect the interpretation.
 
 ## Recommended First Run
 

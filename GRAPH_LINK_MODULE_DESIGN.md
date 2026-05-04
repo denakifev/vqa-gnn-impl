@@ -32,13 +32,15 @@
    - scene attends to kg
    - kg attends to scene
 5. pooled `link_repr`
-6. late fusion with the baseline representation:
-   `concat([baseline_repr, alpha * link_repr]) -> MLP`
+6. отдельный graph-link answer head поверх
+   `concat([baseline_repr, alpha * link_repr])`
+7. late logit fusion:
+   `final_logits = baseline_logits + alpha * graph_link_logits`
 
 Модуль не переписывает baseline adjacency matrix и не меняет dataset contract.
 Интеграция теперь поздняя и более безопасная: baseline graph path строит
-`baseline_repr` как раньше, а graph-link branch добавляет отдельный
-auxiliary representation только на этапе финального fusion.
+`baseline_repr` и `baseline_logits` как раньше, а graph-link branch добавляет
+отдельный auxiliary answer signal только на этапе финального logit fusion.
 
 ## 3. Where It Is Inserted
 
@@ -51,7 +53,10 @@ auxiliary representation только на этапе финального fusio
    relation-aware `DenseGATLayer` stack;
 5. отдельно graph-link branch строит sparse cross-graph attention и
    производит `link_repr`;
-6. `baseline_repr` и `link_repr` сливаются на финальном readout stage.
+6. baseline classifier даёт `baseline_logits`;
+7. graph-link classifier даёт `graph_link_logits`;
+8. итоговый ответ получается через
+   `baseline_logits + alpha * graph_link_logits`.
 
 То есть модуль больше не стоит как pre-GNN overwrite. Это теперь
 **late-fusion auxiliary branch**.
@@ -145,7 +150,18 @@ Freeze policy реализован в
 - top-k sparsification вопрос-обусловлена, но пока не использует отдельный
   threshold schedule или auxiliary sparsity loss.
 - baseline adjacency matrix не расширяется новыми typed edges; cross-graph
-  linking сейчас реализован как pre-GNN residual exchange, а не как полная
-  graph rewiring.
+  branch работает как auxiliary late-fusion path, а не как полная graph
+  rewiring.
 - Реальный gain по quality пока `not validated yet`; эта сессия готовит
   чистую experimental surface, а не claim о metric improvement.
+
+## 8. Recorded Difficulties
+
+- Первая graph-link реализация оказалась слишком агрессивной как pre-GNN
+  intervention и регрессировала на VQA-2 относительно baseline.
+- Frozen graph-link runs без pretrained baseline checkpoint методологически
+  слабы и могут коллапсировать почти в нулевую accuracy.
+- Matching experimental protocol оказался критичным: small differences in
+  subset/seed/batch/clipping made comparisons noisy.
+- Более conservative rewrites улучшают stability, но могут уменьшать эффект
+  модуля. Это остаётся активной исследовательской дилеммой.

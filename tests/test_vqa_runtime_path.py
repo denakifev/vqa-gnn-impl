@@ -137,7 +137,10 @@ class TestVQAModel:
         }
         out = model(**batch)
         assert out["logits"].shape == (B, 13)
+        assert out["baseline_logits"].shape == (B, 13)
+        assert out["graph_link_logits"].shape == (B, 13)
         assert "graph_link_stats" in out
+        assert "link_alpha" in out["graph_link_stats"]
 
 
 class TestVQAHydraConfigs:

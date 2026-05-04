@@ -109,12 +109,77 @@ Follow-up action taken in the repo:
   - cosine-based scoring;
   - top-k filtering;
   - dynamic relevance thresholds;
-  - lightweight 2-layer graph propagation;
-  - residual scales initialized at zero, so the module starts as an identity
-    map.
+  - bidirectional sparse cross-attention;
+  - pooled auxiliary branch representation instead of direct node overwrite.
+- after that, the integration strategy was strengthened again:
+  - baseline answer head kept intact;
+  - graph-link branch now has a separate auxiliary answer head;
+  - final prediction uses weighted logit fusion instead of representation
+    overwrite.
 
 Interpretation discipline:
 
 - these failed runs should be treated as valid negative experimental evidence
   about the *first* graph-link formulation, not as a final verdict on the
   broader hypothesis about controlled inter-graph integration.
+
+## Experimental Difficulties Recorded
+
+The following difficulties should be kept in the protocol for later reporting.
+
+### Methodological difficulties
+
+1. Controlled comparison required exact matching of:
+   - train subset size
+   - val subset size
+   - shuffle behavior / seed
+   - batch size
+   - epoch protocol (`epoch_len=null` vs fixed steps)
+   - clipping settings
+
+   Early graph-link runs were not always matched perfectly to the baseline,
+   which made raw metric comparisons less reliable until the protocol was
+   tightened.
+
+2. Frozen graph-link experiments are only interpretable when the frozen
+   backbone is initialized from a trained baseline checkpoint. Frozen runs from
+   random initialization can collapse to near-zero training accuracy and should
+   be treated as setup failures, not model conclusions.
+
+3. The first graph-link formulation intervened too early in the pipeline
+   (pre-GNN node rewriting), which made it difficult to separate:
+   - useful cross-graph integration
+   - harmful perturbation of an already working baseline
+
+4. Later rewrites showed that making the module safer can also make it too weak
+   to provide an immediate measurable gain. This created a recurring tradeoff
+   between stability and effect size.
+
+### Engineering difficulties
+
+1. Kaggle checkpoint saving for large runs was unstable under the default
+   PyTorch zip serialization and required a hardened save path.
+
+2. Resume / checkpoint loading required explicit compatibility handling for
+   PyTorch 2.6 (`weights_only=False`) and config serialization cleanup.
+
+3. Hydra-based optimizer/scheduler wiring needed extra normalization and
+   conversion so custom param groups and epoch-based schedulers worked in both
+   GQA and VQA-2 paths.
+
+4. Controlled subset experiments required explicit config support for:
+   - `limit`
+   - `shuffle_index`
+   - `shuffle_seed`
+   so that repeated runs used the same data slices.
+
+### Current protocol lesson
+
+For future architectural experiments, the safest reporting order is:
+
+1. matched baseline control
+2. frozen-baseline + new module
+3. full baseline + new module
+
+This ordering gives the clearest interpretation and catches setup problems
+before expensive full-train comparison runs.
