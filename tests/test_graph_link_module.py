@@ -174,3 +174,10 @@ class TestGraphLinkHydraConfigs:
         cfg = self._compose("graph_link_gqa_frozen", [])
         assert cfg.model.enable_graph_link_module is True
         assert cfg.freeze_policy.freeze_all_baseline is True
+
+    def test_frozen_warm_graph_link_config_uses_non_strict_pretrained_loading(self):
+        cfg = self._compose("graph_link_gqa_frozen_warm", [])
+        assert cfg.model.enable_graph_link_module is True
+        assert cfg.freeze_policy.freeze_all_baseline is True
+        assert cfg.trainer.pretrained_strict is False
+        assert cfg.trainer.from_pretrained is None

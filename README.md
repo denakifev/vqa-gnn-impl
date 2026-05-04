@@ -31,6 +31,7 @@ GQA, основной paper-aligned path:
 - Research configs:
   - `src/configs/graph_link_gqa.yaml`
   - `src/configs/graph_link_gqa_frozen.yaml`
+  - `src/configs/graph_link_gqa_frozen_warm.yaml`
 - Inference config: `src/configs/inference_gqa.yaml`
 
 VQA-2, coursework extension:
@@ -104,12 +105,28 @@ scheduler / depth / text finetuning, сохраняя при этом практ
 - `baseline_gqa` — baseline control
 - `graph_link_gqa` — baseline + graph-link module
 - `graph_link_gqa_frozen` — frozen baseline + trainable graph-link module
+- `graph_link_gqa_frozen_warm` — frozen baseline, warm-started from trained
+  baseline checkpoint, trainable graph-link module only
 - `baseline_vqa` — VQA-2 coursework baseline control
 - `graph_link_vqa` — VQA-2 baseline + graph-link module
 - `graph_link_vqa_frozen` — frozen VQA-2 baseline + trainable graph-link module
 
 Freeze policy применяется через `freeze_policy` block в train config и
 обрабатывается в `src/utils/model_freeze.py`.
+
+Для каузального ответа на вопрос "откуда взялись +10pp на GQA?" главным
+следующим режимом считается именно `graph_link_gqa_frozen_warm`:
+
+- загружается обученный baseline checkpoint;
+- baseline path полностью замораживается;
+- обучаются только:
+  - link scorer,
+  - sparse cross-attention,
+  - pooled `link_repr`,
+  - `graph_link_classifier`,
+  - scalar `graph_link_alpha`.
+
+Это отделяет вклад нового модуля от co-adaptation baseline backbone.
 
 ## Зафиксированные метрики
 

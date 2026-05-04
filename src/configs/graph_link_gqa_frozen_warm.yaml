@@ -1,0 +1,17 @@
+# GQA graph-link experiment with a frozen baseline warm-started from a trained
+# baseline checkpoint.
+#
+# This is the primary causal-attribution regime for the coursework:
+# the baseline backbone is loaded from a trained checkpoint, frozen, and only
+# the graph-link branch remains trainable.
+
+defaults:
+  - graph_link_gqa_frozen
+  - _self_
+
+writer:
+  run_name: "gqa_graph_link_frozen_warm_kaggle"
+
+trainer:
+  from_pretrained: null
+  pretrained_strict: False

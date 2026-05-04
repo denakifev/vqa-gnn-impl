@@ -84,6 +84,8 @@ trainer:
     - "graph_node_types"
     - "labels"
   resume_from: null
+  from_pretrained: null
+  pretrained_strict: True
   device: auto
   override: False
   monitor: "max val_GQA_Accuracy"

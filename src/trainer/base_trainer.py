@@ -619,7 +619,28 @@ class BaseTrainer:
             weights_only=False,
         )
 
+        strict = bool(self.config.trainer.get("pretrained_strict", True))
+
         if checkpoint.get("state_dict") is not None:
-            self.model.load_state_dict(checkpoint["state_dict"])
+            load_result = self.model.load_state_dict(
+                checkpoint["state_dict"],
+                strict=strict,
+            )
         else:
-            self.model.load_state_dict(checkpoint)
+            load_result = self.model.load_state_dict(
+                checkpoint,
+                strict=strict,
+            )
+
+        if not strict:
+            missing = sorted(load_result.missing_keys)
+            unexpected = sorted(load_result.unexpected_keys)
+            if hasattr(self, "logger"):
+                self.logger.info(
+                    "Loaded pretrained weights with strict=False: "
+                    f"missing_keys={len(missing)}, unexpected_keys={len(unexpected)}"
+                )
+                if missing:
+                    self.logger.info(f"Missing keys: {missing}")
+                if unexpected:
+                    self.logger.info(f"Unexpected keys: {unexpected}")

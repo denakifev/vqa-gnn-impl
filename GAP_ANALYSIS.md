@@ -78,6 +78,9 @@ coursework extension и не должен подаваться как резул
 - For graph-link experiments, frozen runs are only meaningful when initialized
   from a trained baseline checkpoint; frozen-from-scratch runs can collapse and
   should be treated as setup failures, not architecture conclusions.
+- `graph_link_gqa_frozen_warm` is now the preferred causal-attribution regime:
+  it isolates the graph-link branch while keeping the baseline backbone fixed
+  at the trained `0.20` GQA checkpoint.
 - Comparing graph-link variants to baseline requires fully matched protocol:
   subset sizes, shuffle regime, batch size, clipping, and epoch definition all
   materially affect the interpretation.

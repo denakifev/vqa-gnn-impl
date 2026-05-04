@@ -92,6 +92,66 @@ python train.py --config-name baseline_gqa \
 - this should still be described as a controlled-subset result, not as a full
   paper reproduction claim.
 
+### GQA — stratified analysis by question type
+
+Наблюдённый статус:
+
+- analysis artifact directory: `exp2`
+- comparison: `baseline_gqa` vs `graph_link_gqa`
+- common questions: `7000`
+- overall baseline accuracy in this analysis run: `0.1796`
+- overall graph-link accuracy in this analysis run: `0.3066`
+- overall delta: `+0.1270`
+- bootstrap 95% CI: `[+0.1156, +0.1386]`
+
+Краткие результаты по bucket'ам:
+
+- `compare`: `0.4112 -> 0.5514`, delta `+0.1402`
+- `logical`: `0.5334 -> 0.5043`, delta `-0.0292`
+- `choose`: `0.0000 -> 0.3391`, delta `+0.3391`
+- `verify`: `0.5038 -> 0.5031`, delta `-0.0007`
+- `query`: `0.0000 -> 0.1592`, delta `+0.1592`
+
+Интерпретация:
+
+- stratified analysis подтверждает, что новый модуль даёт не просто общий
+  прирост, а выраженный прирост на части question-type bucket'ов;
+- заметный gain на `compare` хорошо согласуется с основной гипотезой о пользе
+  controlled cross-graph bridging;
+- `verify` почти не меняется, а `logical` даже слегка проседает, так что
+  улучшение не является равномерным по всем типам вопросов;
+- крупные сдвиги на `choose` и `query` выглядят многообещающе, но требуют
+  дополнительной sanity-check интерпретации, потому что baseline в этих
+  bucket'ах в текущем анализе оказался аномально слабым;
+- в целом это удачный и важный интерпретационный эксперимент: он делает
+  успех на GQA содержательно объяснимым, а не только численным.
+
+### GQA — следующий обязательный каузальный эксперимент
+
+Следующий приоритетный R&D шаг:
+
+- path: `graph_link_gqa_frozen_warm.yaml`
+- baseline warm-start: trained GQA baseline checkpoint with observed
+  `val_GQA_Accuracy = 0.20`
+- freeze regime: full baseline frozen
+- trainable components:
+  - link scorer;
+  - sparse cross-attention;
+  - pooled `link_repr`;
+  - `graph_link_classifier`;
+  - scalar `graph_link_alpha`
+
+Зачем это нужно:
+
+- текущий `0.20 -> 0.30+` результат получен при совместном обучении baseline и
+  graph-link branch;
+- warm-start frozen regime позволит отделить вклад самого модуля от
+  co-adaptation baseline backbone;
+- если результат останется высоким (`~0.27-0.30`), это станет главным
+  аргументом в пользу модуля как plug-in graft поверх фиксированного baseline;
+- если результат откатится ближе к baseline, это тоже останется сильным
+  исследовательским выводом о существенной роли joint adaptation.
+
 ### VQA-2 — классический baseline
 
 Наблюдённый статус:

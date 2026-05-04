@@ -82,6 +82,17 @@
 - `freeze_policy.freeze_all_baseline = True`
 - trainable остаётся в основном graph-link module
 
+### GQA: frozen warm-start baseline + graph-link
+
+- config: `graph_link_gqa_frozen_warm`
+- `model.enable_graph_link_module = True`
+- `freeze_policy.freeze_all_baseline = True`
+- `trainer.from_pretrained` должен указывать на обученный baseline checkpoint
+- `trainer.pretrained_strict = False`, чтобы baseline checkpoint можно было
+  безопасно загрузить в graph-link model variant
+- это основной каузальный режим для проверки, даёт ли модуль прирост как
+  plug-in graft поверх фиксированного baseline
+
 ### VQA-2 baseline
 
 - config: `baseline_vqa`
@@ -141,6 +152,15 @@ Freeze policy реализован в
 
 - `freeze_all_baseline = True`
 - `freeze_graph_link_module = False`
+
+Но для методологически корректного эксперимента этого недостаточно: frozen
+graph-link runs должны стартовать не с random initialization baseline, а с
+обученного baseline checkpoint. Поэтому приоритетный режим теперь:
+
+- `graph_link_gqa_frozen_warm`
+- trained baseline checkpoint
+- frozen baseline backbone
+- trainable graph-link branch only
 
 ## 7. Оставшиеся ограничения и риски
 
